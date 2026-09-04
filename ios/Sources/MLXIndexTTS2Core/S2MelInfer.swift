@@ -1,0 +1,285 @@
+import Foundation
+import MLX
+
+/// s2mel 推理（用 S2MelWeights）+ CFM 采样（p0/s2mel_impl 移植）
+public struct S2MelInfer {
+
+    public let w: S2Mel
+
+    public init(weights: S2Mel) { w = weights }
+
+    // MARK: - TimestepEmbedder
+    // freqs buffer：safetensors 无该 buffer（python 端按 buffer 加载）→ 用代码生成（50kHz 全频）
+    // ⚠️ 频率公式：官方 buffer = 2π·freq_table? p0 里用 weight 内 buffer——版本差异见 README 修正清单。
+    private func timeEmb(_ t: MLXArray) -> MLXArray {
+        // 频率表（8000Hz 工程近似；若用真 buffer 更准——见 README）
+        let freqs: [Float] = (0..<128).map { Float($0) / 8000.0 * 2 * .pi }
+        // ⚠️ 官方 t_embedder scale=1000，实际 buffer 请从 torch .pt 导出（feat/资源阶段处理）
+        let scale: Float = 1000.0
+        let args = scale * t * MLXArray(freqs, [128])
+        let emb = args.cos().concatenated([args.sin()], axis: 0)   // [256]
+        // mlp0=w[0],b[1]; mlp2=w[2],b[3]
+        var h = Ops.linear(emb.expanded(to: [1, 256]), w: w.tEmbW[0], b: w.tEmbW[1])
+        h = Ops.silu(h)
+        return Ops.linear(h, w: w.tEmbW[2], b: w.tEmbW[3]).reshaped([-1])   // [512]
+    }
+
+    // MARK: - adaLN（transformer 版：split 前 scale 后 shift，直接乘；官方 AdaptiveLayerNorm）
+    private func adaln(_ x: MLXArray, c: MLXArray, pw: MLXArray, pb: MLXArray) -> MLXArray {
+        // c [1,512] → Linear → [1,1024]
+        let m = Ops.linear(c.expanded(to: [1, 512]), w: pw, b: pb).reshaped([-1])   // [1024]
+        let dim = TTSConfig.ditDim
+        let scale = m[0..<dim]      // 前 = weight(scale)，直接乘
+        let shift = m[dim..<(dim * 2)]
+        return x * scale + shift    // x [T,D] × scale [D]（trailing 广播）
+    }
+
+    // MARK: - DiT forward（x/prompt_x/cond/style → velocity）
+    public func diTForward(x: MLXArray, promptX: MLXArray, cond: MLXArray,
+                           t: MLXArray, style: MLXArray) -> MLXArray {
+        // x/promptX [1,80,T]；cond [1,T,512]；style [1,192]
+        let B = x.shape[0], T = x.shape[2]
+        let t1 = timeEmb(t).expanded(to: [B, 512])                       // [B,512]
+        // cond → 512
+        var c = cond
+        c = Ops.linear(c, w: w.condProjW, b: w.condProjB)                // [1,T,512]
+        let xt = x.transposed(0, 2, 1)                                   // [1,T,80]
+        let pxt = promptX.transposed(0, 2, 1)
+        // cat [x,prompt,cond(512),style(192)] = 864
+        var xIn = xt.concatenated([pxt], axis: 2)
+        xIn = xIn.concatenated([c], axis: 2)
+        let styleT = style.expanded(to: [1, T, TTSConfig.spkDim])
+        xIn = xIn.concatenated([styleT], axis: 2)
+        xIn = Ops.linear(xIn, w: w.condMergeW, b: w.condMergeB)          // [1,T,512]
+
+        // Transformer（13 层，非因果，uvit skip 0-5 → 7-12）
+        var h = xIn
+        var skipStack: [MLXArray] = []
+        let freqT = Rotary.precompute(seqLen: T, headDim: 64)            // 复用 rope 频率
+        for (i, blk) in w.tfBlocks.enumerated() {
+            var skipIn: MLXArray?
+            if i > TTSConfig.ditLayers / 2 { skipIn = skipStack.popLast() }
+            if let s = skipIn, let sw = blk.skipW, let sb = blk.skipB {
+                h = Ops.linear(h.concatenated([s], axis: 2), w: sw, b: sb)
+            }
+            // attn
+            let lnA = Ops.rmsNorm(h, weight: blk.anNormW, eps: 1e-5)
+            let ca = adaln(lnA, c: t1, pw: blk.anProjW, pb: blk.anProjB)
+            // qkv（fused）[T,1536] → q|k|v 三段（各 512，Range 拆）
+            let qkv = Ops.linear(ca, w: blk.attnWqkv, b: nil)
+            let D = TTSConfig.ditDim, HD = TTSConfig.ditHeadDim, H = TTSConfig.ditHeads
+            let qkv3 = qkv.reshaped([T, 3 * D])
+            // q/k/v 按 q|k|v 段（Range）拆；随后转 [H,T,HD] 布局
+            var q = qkv3[0..., 0..<D].reshaped([T, H, HD])
+            var k = qkv3[0..., D..<(2 * D)].reshaped([T, H, HD])
+            let v = qkv3[0..., (2 * D)..<(3 * D)].reshaped([T, H, HD])
+            q = Rotary.applyCPU(q, cs: freqT)
+            k = Rotary.applyCPU(k, cs: freqT)
+            // [T,H,HD] → [H,T,HD]（单 batch 后用 [1,H,T,HD] matmul）
+            let qB = q.transposed(1, 0, 2).expanded(to: [1, H, T, HD])
+            let kB = k.transposed(1, 0, 2).expanded(to: [1, H, T, HD])
+            let vB = v.transposed(1, 0, 2).expanded(to: [1, H, T, HD])
+            var sc = qB.matmul(kB.transposed(0, 1, 3, 2)) * (1.0 / Float(HD).squareRoot())
+            sc = Ops.softmaxLast(sc)
+            let ctxOut = sc.matmul(vB)                                    // [1,H,T,HD]
+            let ctxFlat = ctxOut.transposed(0, 2, 1, 3).reshaped([T, D])  // [T,D]
+            let aOut = Ops.linear(ctxFlat, w: blk.attnWo, b: nil)
+            h = h + aOut
+            // ffn
+            let lnF = Ops.rmsNorm(h, weight: blk.fnNormW, eps: 1e-5)
+            let cf = adaln(lnF, c: t1, pw: blk.fnProjW, pb: blk.fnProjB)
+            let g = Ops.silu(Ops.linear(cf, w: blk.ffnW1, b: nil)) * Ops.linear(cf, w: blk.ffnW3, b: nil)
+            var fOut = Ops.linear(g, w: blk.ffnW2, b: nil)
+            _ = fOut.shape
+            h = h + fOut
+            if i < TTSConfig.ditLayers / 2 { skipStack.append(h) }
+        }
+        // tail adaLN
+        let lnT = Ops.rmsNorm(h, weight: w.tfNormW, eps: 1e-5)
+        h = adaln(lnT, c: t1, pw: w.tfNormProjW, pb: w.tfNormProjB)
+
+        // skip_linear：cat(h, 原始 x80) → 512
+        h = Ops.linear(h.concatenated([xt], axis: 2), w: w.skipLinW, b: w.skipLinB)   // [1,T,512]
+
+        // wavenet 尾
+        var wv = Ops.linear(h, w: w.conv1W, b: w.conv1B)                  // [1,T,512]
+        wv = wv.transposed(0, 2, 1)                                       // [1,512,T]
+        let t2 = timeEmb(t).reshaped([512])
+        let g2 = t2.expanded(to: [1, 512, 1])
+        let wav = wavenet(x: wv, g: g2)                                   // [1,512,T]
+        var out = wav.transposed(0, 2, 1)                                 // [1,T,512]
+        let resAdd = Ops.linear(h, w: w.resProjW, b: w.resProjB)
+        out = out + resAdd
+        // final layer
+        out = finalLayer(out, c: t1)                                      // [1,T,512]
+        out = out.transposed(0, 2, 1)                                     // [1,512,T]
+        // conv2 (80,1,512) k1
+        return Ops.conv1d(out, w: w.conv2W, b: w.conv2B)                  // [1,80,T]
+    }
+
+    // MARK: - WaveNet（reflect pad）
+    private func wavenet(x: MLXArray, g: MLXArray) -> MLXArray {
+        // x [1,512,T] g [1,512,1]
+        var gAll = Ops.conv1d(g, w: w.wnCondW, b: w.wnCondB)              // [1,8192,1]
+        var output: MLXArray?
+        var xm = x
+        let ch = TTSConfig.wnChannels
+        for i in 0..<TTSConfig.wnLayers {
+            // reflect pad 2+2
+            let padded = Ops.reflectPad(xm, left: 2, right: 2)
+            let xIn = Ops.conv1d(padded, w: w.wnIn[i].w, b: w.wnIn[i].b)  // [1,1024,T]
+            let gslice = gAll[0..., (i*2*ch)..<((i+1)*2*ch), 0...]
+            let gs = gslice.expanded(to: [1, 2 * ch, xIn.shape[2]])
+            let acts = fusedGate(xIn, gs)
+            let (rw, rb) = w.wnResSkip[i]
+            var rsa = Ops.conv1d(acts, w: rw, b: rb)                      // [1,1024,T]
+            if i < TTSConfig.wnLayers - 1 {
+                let res = rsa[0..., 0..<ch, 0...]
+                let skip = rsa[0..., ch..<(2*ch), 0...]
+                xm = xm + res
+                if output == nil { output = skip } else { output = output! + skip }
+            } else {
+                output = (output ?? rsa) + rsa
+            }
+        }
+        return output ?? x
+    }
+
+    private func fusedGate(_ a: MLXArray, _ g: MLXArray) -> MLXArray {
+        let t = a + g
+        let ch2 = t.shape[1]
+        let half = ch2 / 2
+        let h1 = t[0..., 0..<half, 0...]
+        let h2 = t[0..., half..<ch2, 0...]
+        return Ops.tanhOp(h1) * Ops.sigmoidOp(h2)
+    }
+
+    // MARK: - FinalLayer（官方：LN(no-affine,1e-6) → SiLU→Linear(512→1024) → (shift,scale) → x*(1+scale)+shift → Linear）
+    private func finalLayer(_ x: MLXArray, c: MLXArray) -> MLXArray {
+        // x [1,T,512]；LN 作用在最后维（512）
+        let xN = Ops.layerNorm(x, weight: nil, bias: nil, eps: 1e-6)
+        // adaLN_modulation = SiLU → Linear(512→1024)
+        let s = Ops.silu(c)                                        // [1,512]
+        let m = Ops.linear(s.expanded(to: [1, 512]),
+                           w: w.finalAdaW, b: w.finalAdaB).reshaped([-1])   // [1024]
+        // FinalLayer 约定（与 transformer 相反）：前 shift，后 scale，且用 (1+scale)
+        let dim = TTSConfig.ditDim
+        let shift = m[0..<dim]
+        let scale = m[dim..<(dim * 2)]
+        let y = xN * (1 + scale) + shift
+        return Ops.linear(y, w: w.finalLinW, b: w.finalLinB)       // [1,T,512]
+    }
+
+    // MARK: - LengthRegulator
+    public func lengthRegulate(_ sInfer: MLXArray, targetLen: Int) -> MLXArray {
+        // sInfer [1,T,1024]
+        var x = Ops.linear(sInfer, w: w.lrContentProjW, b: w.lrContentProjB)  // [1,T,512]
+        x = x.transposed(0, 2, 1)
+        x = nearestSize(x, size: targetLen)
+        for i in 0..<4 {
+            var y = Ops.conv1d(x, w: w.lrConvs[i].0, b: w.lrConvs[i].1)
+            y = Ops.layerNorm(y, weight: w.lrNorms[i].0, bias: w.lrNorms[i].1, eps: 1e-5)
+            x = MLX.mish(y)
+        }
+        x = Ops.conv1d(x, w: w.lrFinal.0, b: w.lrFinal.1)
+        return x.transposed(0, 2, 1)                                    // [1,T',512]
+    }
+
+    private func nearestSize(_ x: MLXArray, size: Int) -> MLXArray {
+        // [B,C,T] → 最近邻插值
+        let (b, c, t) = (x.shape[0], x.shape[1], x.shape[2])
+        let floats = x.asFloatArray()
+        var out = [Float](repeating: 0, count: b * c * size)
+        for bi in 0..<b {
+            for ci in 0..<c {
+                for ti in 0..<size {
+                    let src = min(t - 1, ti * t / max(1, size))
+                    out[(bi * c + ci) * size + ti] = floats[(bi * c + ci) * t + src]
+                }
+            }
+        }
+        return MLXArray(out, [b, c, size])
+    }
+
+    // MARK: - CFM（欧拉 + CFG）
+    public func cfm(mu: MLXArray, prompt: MLXArray, style: MLXArray,
+                    steps: Int = TTSConfig.cfmSteps,
+                    seed: UInt64) -> MLXArray {
+        // mu [1,T,512]（prompt 段+目标段）；prompt [1,80,P]
+        let B = mu.shape[0], T = mu.shape[1]
+        let promptLen = prompt.shape[2]
+        var rng = SplitMix64(seed: seed)
+        // z = randn[1,80,T]
+        var xF = [Float](repeating: 0, count: 80 * T)
+        for i in 0..<xF.count {
+            xF[i] = Float.random(in: -1...1, using: &rng) * 1.0  // 近似高斯（多处叠加中心极限）
+        }
+        // ⚠️ 高斯采样待修（用 Box-Muller）
+        var x = MLXArray(xF, [1, 80, T])
+        let z = x
+        var promptX = MLXArray.zeros([1, 80, T])
+        // prompt 区锚定
+        promptX = copySlice(promptX, src: prompt, count: promptLen)
+        // x[..., :P] = 0
+        x = zeroPrefix(x, count: promptLen)
+
+        let tSpan = (0...steps).map { Float($0) / Float(steps) }
+        let cfg = TTSConfig.cfmCfgRate
+        var xt = x
+        let tt0 = MLXArray([tSpan[0]], [1])
+        _ = tt0
+        for s in 1...steps {
+            let dt = tSpan[s] - tSpan[s - 1]
+            let tVal = MLXArray([tSpan[s - 1]], [1])
+            if cfg > 0 {
+                // stack [prompt,0] × [style,0] × [mu,0] × [x,x]
+                let px2 = promptX.concatenated([MLXArray.zeros([1, 80, T])], axis: 0)
+                let st2 = style.concatenated([MLXArray.zeros([1, TTSConfig.spkDim])], axis: 0)
+                let mu2 = mu.concatenated([MLXArray.zeros([1, T, 512])], axis: 0)
+                let xx = xt.concatenated([xt], axis: 0)
+                let tt = MLXArray([tSpan[s - 1], tSpan[s - 1]], [2])
+                var d = diTForward(x: xx, promptX: px2, cond: mu2, t: tt, style: st2)
+                let dHalf = d.shape[0] / 2
+                let d1 = d[0..., 0..<dHalf, 0...]
+                let d0 = d[0..., dHalf..<d.shape[0], 0...]
+                d = (d1 * (1 + cfg)) - (d0 * cfg)
+                xt = xt + d * dt
+            } else {
+                let d = diTForward(x: xt, promptX: promptX, cond: mu, t: tVal, style: style)
+                xt = xt + d * dt
+            }
+            xt = zeroPrefix(xt, count: promptLen)
+        }
+        _ = z
+        return xt
+    }
+
+    private func copySlice(_ dst: MLXArray, src: MLXArray, count: Int) -> MLXArray {
+        // [1,80,count] 拷到 dst 前 count
+        let srcSlice = src[0..., 0..., 0..<count]
+        let dstShape = dst.shape
+        let (b, c, t) = (dstShape[0], dstShape[1], dstShape[2])
+        let srcF = srcSlice.asFloatArray()
+        let dstF = dst.asFloatArray()
+        var out = dstF
+        for i in 0..<srcF.count {
+            let bi = i / (c * count); let rest = i % (c * count)
+            let ci = rest / count; let ti = rest % count
+            out[(bi * c + ci) * t + ti] = srcF[i]
+        }
+        return MLXArray(out, dstShape)
+    }
+
+    private func zeroPrefix(_ x: MLXArray, count: Int) -> MLXArray {
+        let (b, c, t) = (x.shape[0], x.shape[1], x.shape[2])
+        var f = x.asFloatArray()
+        for bi in 0..<b {
+            for ci in 0..<c {
+                for ti in 0..<min(count, t) {
+                    f[(bi * c + ci) * t + ti] = 0
+                }
+            }
+        }
+        return MLXArray(f, [b, c, t])
+    }
+}

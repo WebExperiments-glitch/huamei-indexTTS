@@ -1,0 +1,23 @@
+# 大模型权重（不进仓库；按 README 单独下载/转换）
+models/
+index-tts-main.zip
+*.ipa
+
+# 第三方参考源码（index-tts-main 官方仓库、xocialize 等）
+reference/
+deps/
+
+# 本地工具目录
+.workbuddy/
+p0/__pycache__/
+scripts/__pycache__/
+build/
+
+# Xcode / SwiftPM
+.DS_Store
+DerivedData/
+.build/
+*.xcuserstate
+
+# 环境
+.env
