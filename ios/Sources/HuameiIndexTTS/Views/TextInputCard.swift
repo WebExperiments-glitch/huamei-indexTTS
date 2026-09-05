@@ -39,7 +39,7 @@ struct TextInputCard: View {
             }
             .glassCard(cornerRadius: 18)
 
-            Text("Tip · 4 · Current model version 2.5")
+            Text("提示：当前模型版本 2.5")
                 .font(Theme.Fonts.caption)
                 .foregroundStyle(Theme.Colors.labelTertiary)
                 .padding(.horizontal, 4)

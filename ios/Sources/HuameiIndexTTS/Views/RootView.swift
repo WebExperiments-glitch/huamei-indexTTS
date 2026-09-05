@@ -26,7 +26,7 @@ struct RootView: View {
             }
             .scrollDismissesKeyboard(.interactively)
             .background(Theme.Colors.canvas.ignoresSafeArea())
-            .navigationTitle("Huamei IndexTTS")
+            .navigationTitle("声库克隆")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {

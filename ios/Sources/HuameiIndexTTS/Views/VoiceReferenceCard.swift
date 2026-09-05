@@ -32,8 +32,8 @@ struct VoiceReferenceCard: View {
                             .foregroundStyle(Theme.Colors.labelPrimary)
                             .lineLimit(1)
                         Text(s.referenceURL == nil
-                             ? "Tap to choose — record · audio · video · files"
-                             : "Tap to change")
+                             ? "点击选择：录音 · 音频 · 视频 · 文件"
+                             : "点击更换")
                             .font(Theme.Fonts.caption)
                             .foregroundStyle(Theme.Colors.labelTertiary)
                     }

@@ -15,7 +15,7 @@ struct AudioSourceSheet: View {
         VStack(spacing: 12) {
             Capsule().fill(Theme.Colors.divider).frame(width: 38, height: 4)
                 .padding(.top, 8)
-            Text("Voice Source")
+            Text("声音来源")
                 .font(Theme.Fonts.title)
                 .foregroundStyle(Theme.Colors.labelPrimary)
                 .padding(.bottom, 4)
@@ -134,7 +134,7 @@ struct AudioSourceSheet: View {
                 recorder.stop()
                 if let url = recorder.lastURL { s.referenceURL = url; dismiss() }
             } label: {
-                Text("Stop")
+                Text("停止")
                     .font(Theme.Fonts.callout)
                     .foregroundStyle(Theme.Colors.labelInverse)
                     .padding(.horizontal, 14).padding(.vertical, 8)

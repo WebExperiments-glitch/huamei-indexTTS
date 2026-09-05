@@ -12,9 +12,24 @@
     <key>CFBundleName</key>
     <string>$(PRODUCT_NAME)</string>
     <key>CFBundleDisplayName</key>
-    <string>HuameiClone</string>
+    <string>声库克隆</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
+
+    <!-- 支持的方向：iPhone 竖+横，iPad 全向（避免黑边） -->
+    <key>UISupportedInterfaceOrientations</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
+    <key>UISupportedInterfaceOrientations~ipad</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationPortraitUpsideDown</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
 
     <!-- 麦克风（应用内录制）-->
     <key>NSMicrophoneUsageDescription</key>

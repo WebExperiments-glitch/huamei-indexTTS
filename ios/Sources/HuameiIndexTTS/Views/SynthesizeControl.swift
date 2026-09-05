@@ -71,22 +71,22 @@ struct SynthesizeControl: View {
 
     private var phaseLabel: String {
         switch s.phase {
-        case .idle:    return "Ready"
-        case .loading: return "Loading model…"
-        case .encoding:return "Encoding text…"
-        case .gpt:     return "Generating tokens…"
-        case .codec:   return "Decoding codec…"
-        case .s2mel:   return "Diffusing mel…"
-        case .vocoder: return "Synthesizing audio…"
-        case .done:    return "Done"
-        case .failed:  return "Failed"
+        case .idle:    return "就绪"
+        case .loading: return "加载模型…"
+        case .encoding:return "编码文本…"
+        case .gpt:     return "生成 Token…"
+        case .codec:   return "解码 Codec…"
+        case .s2mel:   return "扩散声谱…"
+        case .vocoder: return "合成音频…"
+        case .done:    return "完成"
+        case .failed:  return "失败"
         }
     }
 
     private var buttonTitle: String {
         switch s.phase {
-        case .idle, .done, .failed: return "Synthesize"
-        default:                    return "Stop"
+        case .idle, .done, .failed: return "开始合成"
+        default:                    return "停止"
         }
     }
 

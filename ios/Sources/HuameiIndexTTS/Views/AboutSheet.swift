@@ -28,27 +28,27 @@ struct AboutSheet: View {
                     }
 
                     Group {
-                        Text("What's inside").font(Theme.Fonts.heading)
-                        Bullet("Zero-cloud, all on your device")
-                        Bullet("Multilingual: ZH · EN · JA · YUE · ES")
-                        Bullet("Emotion presets (8 categories)")
-                        Bullet("Liquid Glass where supported (iOS 26+)")
+                        Text("功能亮点").font(Theme.Fonts.heading)
+                        Bullet("零云端，全部数据留在设备本地")
+                        Bullet("多语言：中文 · 英文 · 日语 · 西语 · 阿语")
+                        Bullet("8 种情感预设")
+                        Bullet("支持 Liquid Glass 毛玻璃（iOS 26+）")
                     }
                     .foregroundStyle(Theme.Colors.labelSecondary)
 
                     Group {
-                        Text("Credits & License").font(Theme.Fonts.heading)
-                        Text("Engine · IndexTeam IndexTTS-2.5 · Bilibili Model Use License")
+                        Text("致谢与许可").font(Theme.Fonts.heading)
+                        Text("推理引擎 · IndexTeam IndexTTS-2.5 · Bilibili 模型使用许可")
                             .font(Theme.Fonts.caption).foregroundStyle(.secondary)
-                        Text("Weights · vanch007/mlx-indextts2-2.5-8bit · MIT conversion")
+                        Text("模型权重 · vanch007/mlx-indextts2-2.5-8bit · MIT 转换")
                             .font(Theme.Fonts.caption).foregroundStyle(.secondary)
-                        Text("Framework · Apple MLX Swift · Apache-2.0")
+                        Text("框架 · Apple MLX Swift · Apache-2.0")
                             .font(Theme.Fonts.caption).foregroundStyle(.secondary)
-                        Text("Repository · github.com/WebExperiments-glitch/huamei-indexTTS")
+                        Text("开源仓库 · github.com/WebExperiments-glitch/huamei-indexTTS")
                             .font(Theme.Fonts.caption).foregroundStyle(.secondary)
                     }
 
-                    Text("© 2026 · Made for the open-source community")
+                    Text("© 2026 · 为开源社区而作")
                         .font(Theme.Fonts.caption)
                         .foregroundStyle(.tertiary)
                         .padding(.top, 12)
@@ -56,11 +56,11 @@ struct AboutSheet: View {
                 .padding(20)
             }
             .background(Theme.Colors.canvas.ignoresSafeArea())
-            .navigationTitle("About")
+            .navigationTitle("关于")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
+                    Button("完成") { dismiss() }
                 }
             }
         }

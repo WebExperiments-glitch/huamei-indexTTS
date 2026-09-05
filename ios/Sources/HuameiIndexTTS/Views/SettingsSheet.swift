@@ -9,8 +9,8 @@ struct SettingsSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Language") {
-                    Picker("Language", selection: languageBinding) {
+                Section("语言") {
+                    Picker("语言", selection: languageBinding) {
                         ForEach(SessionStore.Language.allCases) { lang in
                             Text(lang.label).tag(lang)
                         }
@@ -20,32 +20,32 @@ struct SettingsSheet: View {
 
                 Section {
                     HStack {
-                        Text("Duration Factor")
+                        Text("语速")
                         Spacer()
                         Text(String(format: "%.2f", s.durationFactor))
                             .monospacedDigit().foregroundStyle(.secondary)
                     }
                     Slider(value: $s.durationFactor, in: 0.5...2.0, step: 0.05) {
-                        Text("Duration Factor")
+                        Text("语速")
                     } minimumValueLabel: { Text("0.5") }
                       maximumValueLabel: { Text("2.0") }
-                    Text("Fast ← Normal → Slow")
+                    Text("快 ← 正常 → 慢")
                         .font(Theme.Fonts.caption).foregroundStyle(.secondary)
-                } header: { Text("Timing") }
-                  footer: { Text("Higher = slower speech, lower = faster.") }
+                } header: { Text("语速调节") }
+                  footer: { Text("数值越大语速越慢，越小越快。") }
 
-                Section("Experimental") {
-                    Toggle("Show experimental features", isOn: $s.showExperimental)
+                Section("实验功能") {
+                    Toggle("显示实验功能", isOn: $s.showExperimental)
                     if s.showExperimental {
                         advancedBlock
                     }
                 }
             }
-            .navigationTitle("Settings")
+            .navigationTitle("设置")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
+                    Button("完成") { dismiss() }
                 }
             }
         }
@@ -62,7 +62,7 @@ struct SettingsSheet: View {
                 Stepper("num_beams   \(s.numBeams)", value: $s.numBeams, in: 1...10)
             }
         }
-        Section("Penalty") {
+        Section("惩罚与长度") {
             Stepper("repetition_penalty  \(String(format: "%.1f", s.repetitionPenalty))",
                     value: $s.repetitionPenalty, in: 1.0...20.0, step: 0.5)
             Stepper("length_penalty  \(String(format: "%.1f", s.lengthPenalty))",

@@ -24,7 +24,7 @@ struct ResultCard: View {
                 .buttonStyle(.plain)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(player.isPlaying ? "Playing…" : "Ready to play")
+                    Text(player.isPlaying ? "播放中…" : "点击播放")
                         .font(Theme.Fonts.callout)
                         .foregroundStyle(Theme.Colors.labelPrimary)
                     Text(s.resultURL?.lastPathComponent ?? "")
