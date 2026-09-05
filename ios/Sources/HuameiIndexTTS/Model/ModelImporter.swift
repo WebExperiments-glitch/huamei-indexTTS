@@ -34,12 +34,14 @@ final class ModelImporter {
 
             try fm.unzipItem(at: url, to: tmp)
 
-            // 找一个"内容根"：如果解压出来只有一个非隐藏目录，进入它
+            // 找一个"内容根"：仅当解压后只有一个非隐藏目录、且没有同级文件时
+            // 才进入该目录（兼容各种 zip 打包方式；避免把根级文件全丢）
             var contentRoot = tmp
             let topItems = (try? fm.contentsOfDirectory(at: tmp, includingPropertiesForKeys: nil)) ?? []
-            let topDirs = topItems.filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
-                && !$0.lastPathComponent.hasPrefix(".") }
-            if topDirs.count == 1 {
+            let visible = topItems.filter { !$0.lastPathComponent.hasPrefix(".") }
+            let topDirs = visible.filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true }
+            let topFiles = visible.filter { !topDirs.contains($0) }
+            if topDirs.count == 1 && topFiles.isEmpty {
                 contentRoot = topDirs[0]
             }
             try mergeDirectory(from: contentRoot, to: modelDir)
