@@ -176,9 +176,3 @@ final class ModelDownloadManager: ObservableObject {
         }
     }
 }
-
-extension Data {
-    func sha256Hex() -> String {
-        SHA256.hash(data: self).map { String(format: "%02x", $0) }.joined()
-    }
-}
