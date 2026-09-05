@@ -1,0 +1,54 @@
+# XcodeGen 清单：SwiftPM → Xcode 工程（CI 用；.xcodeproj 不入库）
+# 本地等价命令：xcodegen generate（配合 make xcodeproj）
+name: HuameiIndexTTS
+options:
+  bundleIdPrefix: com.huamei.indextts
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+packages:
+  MLXSwift:
+    url: https://github.com/ml-explore/mlx-swift.git
+    from: 0.30.0
+targets:
+  MLXIndexTTS2Core:
+    type: framework
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - Sources/MLXIndexTTS2Core
+    settings:
+      base:
+        SKIP_INSTALL: NO
+        SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
+        CODE_SIGN_STYLE: Automatic
+    dependencies:
+      - package: MLXSwift
+        product: MLX
+      - package: MLXSwift
+        product: MLXNN
+      - package: MLXSwift
+        product: MLXRandom
+  HuameiIndexTTS:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - Sources/HuameiIndexTTS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.huamei.indextts.app
+        INFOPLIST_FILE: Sources/HuameiIndexTTS/Resources/Info.plist
+        TARGETED_DEVICE_FAMILY: "1,2"
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        GENERATE_INFOPLIST_FILE: NO
+    dependencies:
+      - target: MLXIndexTTS2Core
+      - package: MLXSwift
+        product: MLX
+schemes:
+  HuameiIndexTTS:
+    build:
+      targets:
+        HuameiIndexTTS: all

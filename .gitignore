@@ -18,6 +18,8 @@ build/
 DerivedData/
 .build/
 *.xcuserstate
+ios/*.xcodeproj
+ios/build/
 
 # 环境
 .env
