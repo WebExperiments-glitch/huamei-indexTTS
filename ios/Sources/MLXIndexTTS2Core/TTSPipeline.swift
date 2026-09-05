@@ -61,10 +61,20 @@ public final class TTSPipeline {
     }
 
     static func loadJson(_ path: String, rows: Int, cols: Int) throws -> [[Float]] {
-        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+        let url = URL(fileURLWithPath: path)
+        guard let data = try? Data(contentsOf: url),
               let arr = try? JSONSerialization.jsonObject(with: data) as? [[Float]] else {
+            var detail = "文件不存在"
+            if let attrs = try? FileManager.default.attributesOfItem(atPath: path),
+               let s = attrs[.size] as? Int {
+                detail = "大小=\(s)B"
+                if let d = try? Data(contentsOf: url) {
+                    let head = String(data: d.prefix(64), encoding: .utf8) ?? "非文本"
+                    detail += " 头部=\(head)"
+                }
+            }
             throw NSError(domain: "TTSPipeline", code: 2,
-                          userInfo: [NSLocalizedDescriptionKey: "bad JSON: \((path as NSString).lastPathComponent)"])
+                          userInfo: [NSLocalizedDescriptionKey: "bad JSON: \((path as NSString).lastPathComponent)（\(detail)）"])
         }
         return arr
     }
