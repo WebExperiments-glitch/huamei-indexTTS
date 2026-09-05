@@ -40,8 +40,8 @@ public final class Campplus {
         // ---- head ----
         conv1 = (p2(try t("head.conv1.weight")), nil)
         bn1 = try BatchNorm2d(prefix: "head.bn1", file: f)
-        resBlocks = []
-        var b1d = resBlocks
+        var b1d: [(b1: MLXArray, bn1: BatchNorm2d, b2: MLXArray, bn2: BatchNorm2d,
+                   sc: MLXArray?, scbn: BatchNorm2d?)] = []
         for stage in 1...2 {
             let nBlocks = 2
             for bi in 0..<nBlocks {
