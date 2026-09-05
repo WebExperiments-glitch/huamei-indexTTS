@@ -464,6 +464,10 @@ jobs:
             BUILD_CMD="$BUILD_CMD ONLY_ACTIVE_ARCH=YES"
             BUILD_CMD="$BUILD_CMD -quiet"
 
+            # mlx-swift 自带 CudaBuild 构建插件在 iOS 交叉编译下无法通过验证 →
+            # 跳过包插件校验（不影响产物，规避 "Validate plug-in ... failed"）
+            BUILD_CMD="$BUILD_CMD -skipPackagePluginValidation"
+
             # Xcode 16+ native compilation caching
             BUILD_CMD="$BUILD_CMD SWIFT_ENABLE_COMPILE_CACHE=YES"
             BUILD_CMD="$BUILD_CMD CLANG_ENABLE_COMPILE_CACHE=YES"
