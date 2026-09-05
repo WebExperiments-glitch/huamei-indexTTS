@@ -2,6 +2,7 @@
 models/
 index-tts-main.zip
 *.ipa
+ipa/
 
 # 第三方参考源码（index-tts-main 官方仓库、xocialize 等）
 reference/
