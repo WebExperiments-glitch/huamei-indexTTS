@@ -22,7 +22,6 @@ struct ModelManifest: Codable {
 /// 零门槛：缺模型就自动从魔搭下载（免登录、进度、断点重试、sha256 校验）。
 /// 使用方只需一个入口：`ModelDownloadManager.download(group:)`。
 @Observable
-@MainActor
 final class ModelDownloadManager {
 
     enum State: Equatable {

@@ -12,6 +12,8 @@ import MLXIndexTTS2Core
 @Observable
 final class InferenceEngine {
 
+    init() {}
+
     enum State: Equatable {
         case uninitialized
         case missingModel
