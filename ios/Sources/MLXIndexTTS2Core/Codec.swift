@@ -59,7 +59,7 @@ public final class SemanticCodecDecoder {
             h = h.transposed(0, 2, 1)
             h = Ops.layerNorm(h, weight: nW, bias: nB, eps: 1e-6)
             var y = Ops.linear(h, w: p1W, b: p1B)
-            y = MLX.gelu(y)
+            y = Ops.gelu(y)
             y = Ops.linear(y, w: p2W, b: p2B)
             y = y * gamma
             y = y.transposed(0, 2, 1)
@@ -89,7 +89,7 @@ public final class SemanticCodecDecoder {
             for k in 0..<8 { embRows[t * 8 + k] = row[k] }
         }
         var x = MLXArray(embRows, [T, 8]).transposed(0, 1)  // [8, T]
-        x = x.broadcast(to: [1, 8, T].asInt32)
+        x = x.reshaped([1, 8, T])
         var q = Ops.conv1d(x, w: outProjW, b: outProjB)     // [1,1024,T]
         // decoder
         var feat = vocosBackbone(q)                          // [1,T,384]

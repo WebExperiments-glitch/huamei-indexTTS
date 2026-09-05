@@ -67,7 +67,7 @@ public final class GPTGenerator {
                          seed: UInt64,
                          onToken: ((Int, Int) -> Void)?) throws -> [Int] {
 
-        _ = seed
+        var rng = SplitMix64(seed: seed)
         let d = TTSConfig.gptDim
 
         // ---- 前缀：conds ∥ [start]text[stop] ----
@@ -106,7 +106,7 @@ public final class GPTGenerator {
         let startRow = try rowVec("mel_embedding.weight", TTSConfig.startMel)
         let startPos0 = try rowVec("mel_pos_embedding.emb.weight", 0)
         var fullSeq = MLX.concatenated([prefixEmb, startRow + startPos0], axis: 0)   // [4+L,D]
-        fullSeq = fullSeq.broadcast(to: [1, fullSeq.shape[0], d].asInt32)
+        fullSeq = fullSeq.reshaped([1, fullSeq.shape[0], d])
 
         var hidden = model.forward(fullSeq, cacheK: &kvK, cacheV: &kvV,
                                    startPos: 0, ropeCosSin: ropeCS,
@@ -132,7 +132,7 @@ public final class GPTGenerator {
             // 下一 mel token：位置 = step（start=0，首个生成 token 位置 1）
             let row = try rowVec("mel_embedding.weight", tok)
             let pos = try rowVec("mel_pos_embedding.emb.weight", step)
-            let emb = (row + pos).broadcast(to: [1, 1, d].asInt32)
+            let emb = (row + pos).reshaped([1, 1, d])
             hidden = model.forward(emb, cacheK: &kvK, cacheV: &kvV,
                                    startPos: step, ropeCosSin: ropeCS,
                                    causalFull: false)

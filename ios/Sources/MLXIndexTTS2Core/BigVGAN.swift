@@ -61,10 +61,10 @@ public final class BigVGAN {
             let dil = [1, 3, 5]
             for j in 0..<3 {
                 // snake(alpha,beta) → convs1[dil] → snake → convs2[1]
-                var y = snakeBeta(h, alpha: alphas[2*j], beta: betas[2*j])
+                var y = snakeBetaOp(h, alpha: alphas[2*j], beta: betas[2*j])
                 // ⚠️ padding=kernel 对齐见 README：BigVGAN 用零 pad、dilation pad 规则 (k-1)*d/2
                 y = padConv(y, k: kernels, dil: dil[j], conv: convs1[j])
-                y = snakeBeta(y, alpha: alphas[2*j+1], beta: betas[2*j+1])
+                y = snakeBetaOp(y, alpha: alphas[2*j+1], beta: betas[2*j+1])
                 y = padConv(y, k: kernels, dil: 1, conv: convs2[j])
                 h = h + y
             }

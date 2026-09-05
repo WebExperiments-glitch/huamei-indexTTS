@@ -109,9 +109,9 @@ public final class Campplus {
         for (stageIdx, _) in resBlocks.enumerated() {
             // stride(2,1) 作用于每 stage 第一块
             let first = stageIdx % 2 == 0
-            x = res(x, r: resBlocks[stageIdx], strideHeight: first ? 2 : 1, strideWidth: first ? 1 : 1)
+            x = res(x, r: resBlocks[stageIdx], stride2: first)
         }
-        x = reluBN2d(bn2, conv2d(x, conv2.w, strideH: 2, strideW: 1))
+        x = reluBN2d(bn2, downsampleH(conv2d(x, conv2.w)))
         // reshape [B, C*H, W] → 320
         let (B, C, H, W) = (x.shape[0], x.shape[1], x.shape[2], x.shape[3])
         x = x.reshaped([B, C * H, W])
@@ -137,7 +137,7 @@ public final class Campplus {
         // 无偏 std（除以 T-1）
         let centered = (x - x.mean(axis: 2, keepDims: true))
         let sq = (centered * centered).sum(axis: 2)
-        let stdX = (sq / (tN - 1)).squareRoot()
+        let stdX = MLX.sqrt(sq / (tN - 1))
         x = MLX.concatenated([meanX, stdX], axis: 1)                 // [B,1024]
 
         // dense 1x1 → [B,1024,1] → [B,192,1] → squeeze
@@ -175,7 +175,7 @@ public final class Campplus {
             inp = MLX.concatenated([MLXArray.zeros([B, C, pad]), inp], axis: 2)
             inp = MLX.concatenated([inp, MLXArray.zeros([B, C, pad])], axis: 2)
         }
-        return MLX.conv1d(inp, w, stride: stride, padding: [0, 0], dilation: dil)
+        return MLX.conv1d(inp, w, stride: stride, padding: 0, dilation: dil)
     }
 
     private func res(_ x: MLXArray, r: (b1: MLXArray, bn1: BatchNorm2d, b2: MLXArray,
@@ -297,7 +297,8 @@ struct CAMDenseLayer {
         ctx = MLX.conv1d(ctx, camL2W, stride: 1, padding: 0, dilation: 1) + camL2B.reshaped([1, -1, 1])  // →out
         let gate = 1 / (1 + MLX.exp(-ctx))                          // sigmoid [B,out,1]
         // 广播到时间维
-        return gate.broadcasted(to: [B, out, T], stream: .default)
+        // gate [B,out,1] 广播到时间维：reshape + 乘法广播（mlx 无 public broadcast）
+        return gate.reshaped([B, out, 1]) * MLXArray.ones([1, 1, T])
     }
 
     private func segPooling(_ x: MLXArray) -> MLXArray {
