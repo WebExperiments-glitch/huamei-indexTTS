@@ -4,7 +4,7 @@ import SwiftUI
 
 /// 模型清单：App 内按需下载的唯一数据源（打包进 Bundle）
 struct ModelManifest: Codable {
-    struct Entry: Codable, Identifiable {
+    struct Entry: Codable, Identifiable, Equatable {
         let path: String      // 相对 Documents/huamei-models/ 的路径
         let group: String     // "synthesis"（基础）| "clone"（克隆组件）
         let size: Int

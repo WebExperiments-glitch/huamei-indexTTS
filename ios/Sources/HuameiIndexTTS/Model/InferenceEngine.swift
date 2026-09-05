@@ -119,7 +119,7 @@ final class InferenceEngine {
 
     // MARK: - WAV 写出
 
-    private static func writeWav(_ samples: [Float], sampleRate: Int) throws -> URL {
+    nonisolated private static func writeWav(_ samples: [Float], sampleRate: Int) throws -> URL {
         let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("huamei-output", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
