@@ -24,6 +24,12 @@ final class InferenceEngine {
     private(set) var state: State = .uninitialized
     private var pipeline: TTSPipeline?
 
+    /// 傻瓜式模型下载器（缺模型 → 一键下载 → 自动就绪）
+    let downloader = ModelDownloadManager()
+
+    /// 半透明给 UI：下载状态
+    var downloadState: ModelDownloadManager.State { downloader.state }
+
     static var modelDir: URL {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         return docs.appendingPathComponent("huamei-models", isDirectory: true)
@@ -31,6 +37,27 @@ final class InferenceEngine {
 
     static var modelAvailable: Bool {
         FileManager.default.fileExists(atPath: modelDir.path)
+    }
+
+    /// 一键下载（main-actor）：缺模型时的总入口。下载完成自动 prepare。
+    func startModelDownload() {
+        guard state == .missingModel else { return }
+        downloader.download(group: "synthesis")
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            while true {
+                if case .done = downloader.state {
+                    self.state = .loading
+                    await self.prepareIfNeeded()
+                    return
+                }
+                if case .failed = downloader.state {
+                    self.state = .missingModel
+                    return
+                }
+                try? await Task.sleep(nanoseconds: 300_000_000)
+            }
+        }
     }
 
     func prepareIfNeeded() async {

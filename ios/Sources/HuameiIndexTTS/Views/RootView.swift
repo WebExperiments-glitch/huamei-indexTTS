@@ -13,6 +13,7 @@ struct RootView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 18) {
+                    ModelStatusView()
                     VoiceReferenceCard(onPick: { showAudioSheet = true })
                     TextInputCard()
                     SynthesizeControl()

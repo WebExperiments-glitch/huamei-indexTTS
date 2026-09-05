@@ -1,0 +1,85 @@
+{
+ "modelscope": "ms-65b5df8b-d073-4c56-a508-7f24ccb2619c",
+ "base_url": "https://modelscope.cn/models/ms-65b5df8b-d073-4c56-a508-7f24ccb2619c/resolve/master/",
+ "total_bytes": 4068379896,
+ "files": [
+  {
+   "path": "gpt.safetensors",
+   "group": "synthesis",
+   "size": 1182278329,
+   "sha256": "f4ba77be4e7b0c435a9812b326bb5ef91d1eb7001fd01c56c0aac614c2f4b2b3"
+  },
+  {
+   "path": "codec.safetensors",
+   "group": "synthesis",
+   "size": 101188975,
+   "sha256": "7ba36ba12dbc6f19adaf50bb4aebee2c4092526c7f4a56479ed1e72e2562009e"
+  },
+  {
+   "path": "s2mel.safetensors",
+   "group": "synthesis",
+   "size": 207320482,
+   "sha256": "26f8c0d388716f1adfa29919d4b924683329cda470464786759e2461ffd5233f"
+  },
+  {
+   "path": "bigvgan.safetensors",
+   "group": "synthesis",
+   "size": 224443177,
+   "sha256": "e69b708e7faac5bc4907e050909419dea214d250b11729f80855c95016fea7b5"
+  },
+  {
+   "path": "multilingual_zh_ja_yue_char_del.tiktoken",
+   "group": "synthesis",
+   "size": 907395,
+   "sha256": "747979631e813193436aabcff7c1c235d37de8097b71c563ec8b63b7a515c718"
+  },
+  {
+   "path": "specials.json",
+   "group": "synthesis",
+   "size": 34755,
+   "sha256": "782a331c41b526ad7458260400b791d2f2ca8d7f29263422fa9bc96a9db32dc1"
+  },
+  {
+   "path": "feat1.json",
+   "group": "synthesis",
+   "size": 289942,
+   "sha256": "7e10d4f6f182f6a9cf6e15dceb78fe5817e76da9394300ba57f26b3d66da8f1d"
+  },
+  {
+   "path": "feat2.json",
+   "group": "synthesis",
+   "size": 1973667,
+   "sha256": "6160638069908c6fec9030db742e30f4d3e28e9157ad3ccf8e7127e575758e59"
+  },
+  {
+   "path": "langs.json",
+   "group": "synthesis",
+   "size": 1768,
+   "sha256": "d378cb9c1e9848c8d4e4ee999053a09f8f3f5533898352a161de9e43b961e5db"
+  },
+  {
+   "path": "config.yaml",
+   "group": "synthesis",
+   "size": 2663,
+   "sha256": "65d07de92a2c26843c14c797951613ef939593ae1e842f31ad7d9f2d04b6eb52"
+  },
+  {
+   "path": "w2v-bert-2.0/model.safetensors",
+   "group": "clone",
+   "size": 2322063736,
+   "sha256": "eb890c9660ed6e3414b6812e27257b8ce5454365d5490d3ad581ea60b93be043"
+  },
+  {
+   "path": "campplus_cn_common.safetensors",
+   "group": "clone",
+   "size": 27831904,
+   "sha256": "854ca12cb383f197547448db3a30bfb5598571ec8051d71e442de8e0ff0cbbf2"
+  },
+  {
+   "path": "wav2vec2bert_stats.json",
+   "group": "clone",
+   "size": 43103,
+   "sha256": "1764af1c7ec0263254e2b3f44ed2f0099c58f8848b2af686acc936a7a5482a66"
+  }
+ ]
+}
