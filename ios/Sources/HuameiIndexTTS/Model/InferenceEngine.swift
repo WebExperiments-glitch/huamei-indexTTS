@@ -13,6 +13,8 @@ import MLXIndexTTS2Core
 @MainActor
 final class InferenceEngine {
 
+    init() {}
+
     enum State: Equatable {
         case uninitialized
         case missingModel

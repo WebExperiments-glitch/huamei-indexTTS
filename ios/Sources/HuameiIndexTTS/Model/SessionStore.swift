@@ -6,6 +6,8 @@ import SwiftUI
 @MainActor
 final class SessionStore {
 
+    init() {}
+
     // MARK: - 用户输入
     var referenceURL: URL?       // 克隆参考音频
     var text: String             // 要克隆的文字
