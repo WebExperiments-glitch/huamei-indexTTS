@@ -84,7 +84,7 @@ public final class SafetensorsFile {
     deinit { try? handle.close() }
 
     // ---- 解码（f16/f32/u32 → MLXArray）----
-    private static func halfToFloat(_ h: UInt16) -> Float {
+    fileprivate static func halfToFloat(_ h: UInt16) -> Float {
         let sign: Float = (h & 0x8000) != 0 ? -1 : 1
         let exp = Int((h >> 10) & 0x1F)
         let mant = Float(h & 0x3FF)
