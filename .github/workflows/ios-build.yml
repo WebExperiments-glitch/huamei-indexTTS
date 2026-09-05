@@ -292,8 +292,18 @@ jobs:
           cd "$IOS_PATH"
 
           # Find workspace or project
-          WORKSPACE=$(find . -maxdepth 1 -name "*.xcworkspace" | head -1)
-          PROJECT=$(find . -maxdepth 1 -name "*.xcodeproj" | head -1)
+          # -print -quit（而非 | head -1）：规避 pandora set -o pipefail 下
+          # find 收 SIGPIPE 导致管道失败/检测空的问题
+          WORKSPACE=$(find . -maxdepth 1 -name "*.xcworkspace" -print -quit 2>/dev/null || true)
+          PROJECT=$(find . -maxdepth 1 -name "*.xcodeproj" -print -quit 2>/dev/null || true)
+
+          # SwiftPM + XcodeGen 兜底：检测为空时当场重生成（确定性构建）
+          if [ -z "$WORKSPACE" ] && [ -z "$PROJECT" ] && [ -f "Package.swift" ]; then
+            echo "No project found; generating with xcodegen..."
+            xcodegen generate
+            PROJECT=$(find . -maxdepth 1 -name "*.xcodeproj" -print -quit 2>/dev/null || true)
+            echo "Using project: $PROJECT"
+          fi
 
           # Install pods if Podfile exists (always run to ensure sync with Podfile.lock)
           if [ -f "Podfile" ]; then
