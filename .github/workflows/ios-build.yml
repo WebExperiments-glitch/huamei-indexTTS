@@ -292,18 +292,14 @@ jobs:
           cd "$IOS_PATH"
 
           # Find workspace or project
-          # -print -quit（而非 | head -1）：规避 pandora set -o pipefail 下
-          # find 收 SIGPIPE 导致管道失败/检测空的问题
-          WORKSPACE=$(find . -maxdepth 1 -name "*.xcworkspace" -print -quit 2>/dev/null || true)
-          PROJECT=$(find . -maxdepth 1 -name "*.xcodeproj" -print -quit 2>/dev/null || true)
-
-          # SwiftPM + XcodeGen 兜底：检测为空时当场重生成（确定性构建）
-          if [ -z "$WORKSPACE" ] && [ -z "$PROJECT" ] && [ -f "Package.swift" ]; then
-            echo "No project found; generating with xcodegen..."
-            xcodegen generate
-            PROJECT=$(find . -maxdepth 1 -name "*.xcodeproj" -print -quit 2>/dev/null || true)
-            echo "Using project: $PROJECT"
-          fi
+          # 本仓库为 SwiftPM + XcodeGen（无 .xcodeproj 入库）：CI 的 find 探测
+          # 在 macOS runner 上行为不可靠，这里直接强制生成并写死工程绝对路径。
+          command -v xcodegen >/dev/null 2>&1 || brew install xcodegen
+          echo "Regenerating project with xcodegen (deterministic)..."
+          xcodegen generate
+          WORKSPACE=""
+          PROJECT="$(pwd)/HuameiIndexTTS.xcodeproj"
+          echo "Using project: $PROJECT"
 
           # Install pods if Podfile exists (always run to ensure sync with Podfile.lock)
           if [ -f "Podfile" ]; then
