@@ -19,7 +19,7 @@ final class SystemMonitor: ObservableObject {
     @Published private(set) var gpuMB: Double = 0        // 显存占用（近似）
     @Published private(set) var logs: [String] = []
 
-    // 供 SettingsSheet 订阅一个实例
+    // 供 SettingsSheet 订阅一个实例；baseline 在 shared 创建时即建立
     init() {
         baselineMB = currentMemoryMB()
     }
@@ -28,10 +28,6 @@ final class SystemMonitor: ObservableObject {
     private var timer: Timer?
     private let device = MTLCreateSystemDefaultDevice()
     private let maxLogs = 200
-
-    init() {
-        baselineMB = currentMemoryMB()
-    }
 
     func start() {
         guard timer == nil else { return }
