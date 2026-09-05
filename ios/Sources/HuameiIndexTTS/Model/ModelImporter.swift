@@ -20,26 +20,30 @@ final class ModelImporter {
     static func importZip(from url: URL) async throws {
         let access = url.startAccessingSecurityScopedResource()
         defer { if access { url.stopAccessingSecurityScopedResource() } }
-        let fm = FileManager.default
-        try fm.createDirectory(at: modelDir, withIntermediateDirectories: true)
 
-        // 解压到临时目录，再合并进模型目录（避免覆盖式解压出问题）
-        let tmp = modelDir.deletingLastPathComponent()
-            .appendingPathComponent("_unzip-\(UUID().uuidString.prefix(6))", isDirectory: true)
-        try fm.createDirectory(at: tmp, withIntermediateDirectories: true)
-        defer { try? fm.removeItem(at: tmp) }
+        // 解压/复制 4GB 级大文件必须离主线程（不阻塞 UI）
+        try await Task.detached(priority: .userInitiated) {
+            let fm = FileManager.default
+            try fm.createDirectory(at: modelDir, withIntermediateDirectories: true)
 
-        try fm.unzipItem(at: url, to: tmp)
+            // 解压到临时目录，再合并进模型目录（避免覆盖式解压出问题）
+            let tmp = modelDir.deletingLastPathComponent()
+                .appendingPathComponent("_unzip-\(UUID().uuidString.prefix(6))", isDirectory: true)
+            try fm.createDirectory(at: tmp, withIntermediateDirectories: true)
+            defer { try? fm.removeItem(at: tmp) }
 
-        // 找一个"内容根"：如果解压出来只有一个非隐藏目录，进入它
-        var contentRoot = tmp
-        let topItems = (try? fm.contentsOfDirectory(at: tmp, includingPropertiesForKeys: nil)) ?? []
-        let topDirs = topItems.filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
-            && !$0.lastPathComponent.hasPrefix(".") }
-        if topDirs.count == 1 {
-            contentRoot = topDirs[0]
-        }
-        try mergeDirectory(from: contentRoot, to: modelDir)
+            try fm.unzipItem(at: url, to: tmp)
+
+            // 找一个"内容根"：如果解压出来只有一个非隐藏目录，进入它
+            var contentRoot = tmp
+            let topItems = (try? fm.contentsOfDirectory(at: tmp, includingPropertiesForKeys: nil)) ?? []
+            let topDirs = topItems.filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+                && !$0.lastPathComponent.hasPrefix(".") }
+            if topDirs.count == 1 {
+                contentRoot = topDirs[0]
+            }
+            try mergeDirectory(from: contentRoot, to: modelDir)
+        }.value
     }
 
     /// 递归合并：把 src 下所有内容复制进 dst（同名文件覆盖）

@@ -70,15 +70,25 @@ struct RootView: View {
         }
         // 模型导入：选择一个模型 ZIP，自动解压（最省事）
         .fileImporter(isPresented: $showImportZip,
-                      allowedContentTypes: [.zip],
+                      allowedContentTypes: [.zip, .item],
                       allowsMultipleSelection: false) { result in
             guard case .success(let urls) = result, let url = urls.first else { return }
             isImporting = true
             Task {
-                try? await ModelImporter.importZip(from: url)
-                await engine.refreshAfterImport()
-                isImporting = false
+                defer { isImporting = false }
+                do {
+                    try await ModelImporter.importZip(from: url)
+                    await engine.refreshAfterImport()
+                } catch {
+                    importError = "模型导入失败：\(error.localizedDescription)"
+                }
             }
+        }
+        .alert("导入模型出错", isPresented: .init(get: { importError != nil },
+                                               set: { if !$0 { importError = nil } })) {
+            Button("好") { importError = nil }
+        } message: {
+            Text(importError ?? "")
         }
     }
 }
