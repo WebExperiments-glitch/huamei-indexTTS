@@ -5,6 +5,7 @@ import SwiftUI
 struct RootView: View {
 
     @EnvironmentObject private var s: SessionStore
+    @EnvironmentObject private var engine: InferenceEngine
     @State private var showAudioSheet: Bool  = false
     @State private var showSettingsSheet: Bool = false
     @State private var showAbout: Bool       = false
