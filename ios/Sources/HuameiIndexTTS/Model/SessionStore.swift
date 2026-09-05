@@ -9,7 +9,7 @@ final class SessionStore: ObservableObject {
 
     // MARK: - 用户输入
     @Published var referenceURL: URL?       // 克隆参考音频
-    @Published var text: String             // 要克隆的文字
+    @Published var text: String = "" // 要克隆的文字
     @Published var language: Language       = .zh
     @Published var durationFactor: Double   = 1.0   // 0.5 … 2.0（demo 同款滑条）
 
