@@ -190,12 +190,12 @@ public final class TTSPipeline {
             let catMu: MLXArray
             let promptMel: MLXArray
             if let pb = prompt {
-                catMu = pb.promptCondition.concatenated([cond], axis: 1)
+                catMu = MLX.concatenated([pb.promptCondition, cond], axis: 1)
                 promptMel = pb.refMel
             } else {
                 // 零占位 prompt（管线验证路径）
                 let zeros = MLXArray.zeros([1, promptLen, 512])
-                catMu = zeros.concatenated([cond], axis: 1)
+                catMu = MLX.concatenated([zeros, cond], axis: 1)
                 promptMel = MLXArray.zeros([1, 80, promptLen])
             }
             let styleArr = MLXArray(style, [1, TTSConfig.spkDim])

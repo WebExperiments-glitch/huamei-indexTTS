@@ -172,7 +172,7 @@ public final class W2VBert {
                 rows.append(clamped + Int32(right))
             }
         }
-        return MLXArray(rows, [T, T]).astype(.int32)
+        return MLXArray(rows, [T, T])
     }
 
     /// 按 [T,T] 索引从 [T,73,H] 收集 → [T,T,H]
@@ -185,7 +185,7 @@ public final class W2VBert {
 
     /// 卷积模块（depthwise k31 → 通道 LN → pointwise 1×1(2048) → swish → pointwise(1024)）
     private func convModule(_ x: MLXArray, b: Block) -> MLXArray {
-        var h = Ops.layerNorm(x, weight: b.convLNw, bias: b.convLNb)     // [B,T,D]
+        let h = Ops.layerNorm(x, weight: b.convLNw, bias: b.convLNb)     // [B,T,D]
         let B = h.shape[0], T = h.shape[1], D = h.shape[2]
         var ct = h.transposed(0, 2, 1)                                    // [B,D,T]
         ct = Ops.reflectPad(ct, left: 15, right: 15)

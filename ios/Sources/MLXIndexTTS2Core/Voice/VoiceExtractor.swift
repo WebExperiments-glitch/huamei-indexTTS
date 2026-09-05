@@ -134,7 +134,7 @@ public final class VoiceExtractor {
         // 归一化（stats）
         let stats = try Self.loadStats(path: paths.statsJSON)   // mean/var [1024]
         let mean = MLXArray(stats.0, [1, 1, 1024])
-        let std = MLXArray(stats.1, [1, 1, 1024]).squareRoot()
+        let std = MLX.sqrt(MLXArray(stats.1, [1, 1, 1024]))
         h = (h - mean) / std
 
         // ref_mel 帧数 P（22.05k path 同产）
@@ -147,7 +147,7 @@ public final class VoiceExtractor {
             let w = try S2Mel(path: paths.s2mel)
             s2mel = S2MelInfer(weights: w)
         }
-        let prompt = try s2mel!.lengthRegulate(h, targetLen: P) // [1,P,512]
+        let prompt = s2mel!.lengthRegulate(h, targetLen: P) // [1,P,512]
         let arr = prompt[0..., 0...].reshaped([-1]).asFloatArray()
         return (arr, P)
     }
