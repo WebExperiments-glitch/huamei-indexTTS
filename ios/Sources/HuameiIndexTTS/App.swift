@@ -14,7 +14,7 @@ struct HuameiIndexTTSApp: App {
                 .environment(session)
                 .environment(engine)
                 .preferredColorScheme(.light)             // 主色白橙
-                .tint(Theme.Color.accent)
+                .tint(Theme.Colors.accent)
                 .task { await engine.prepareIfNeeded() }
         }
     }

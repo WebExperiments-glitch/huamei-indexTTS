@@ -55,9 +55,10 @@ struct AudioSourceSheet: View {
                     .padding(.top, 4)
             }
 
-            Button(role: .cancel) { dismiss() }
-            { Text("Cancel").font(Theme.Fonts.callout) }
-                .padding(.top, 4)
+            Button(role: .cancel, action: { dismiss() }) {
+                Text("Cancel").font(Theme.Fonts.callout)
+            }
+            .padding(.top, 4)
         }
         .padding(.bottom, 28)
         .background(Theme.Colors.canvas.ignoresSafeArea())
