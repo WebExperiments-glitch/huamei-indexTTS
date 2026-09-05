@@ -60,6 +60,27 @@ final class InferenceEngine: ObservableObject {
         FileManager.default.fileExists(atPath: modelDir.path)
     }
 
+    /// 自检关键小文件（tokenizer/feat/langs/config），输出实际大小与 sha256 是否匹配清单
+    @MainActor
+    static func verifySmallFiles() {
+        guard let m = ModelDownloadManager.loadManifest() else {
+            SystemMonitor.shared.appendLog("自检：模型清单读取失败")
+            return
+        }
+        let small = m.files.filter { $0.size <= 5_000_000 }
+        for entry in small {
+            let f = modelDir.appendingPathComponent(entry.path)
+            guard let attrs = try? FileManager.default.attributesOfItem(atPath: f.path),
+                  let size = attrs[.size] as? Int else {
+                SystemMonitor.shared.appendLog("自检缺失：\(entry.path)")
+                continue
+            }
+            let hash = ModelDownloadManager.sha256(url: f)
+            let ok = (size == entry.size) && (hash == entry.sha256)
+            SystemMonitor.shared.appendLog("自检\(ok ? "✔" : "✘")：\(entry.path)  \(size)B \(ok ? "" : "sha=\(hash.prefix(16))…")")
+        }
+    }
+
     /// 一键下载（main-actor）：缺模型时的总入口。下载完成自动 prepare。
     func startModelDownload() {
         guard state == .missingModel else { return }
@@ -84,6 +105,8 @@ final class InferenceEngine: ObservableObject {
     /// 用户手动导入模型后刷新状态（替代网络下载）
     @MainActor
     func refreshAfterImport() async {
+        SystemMonitor.shared.appendLog("导入完成，开始自检关键文件…")
+        Self.verifySmallFiles()
         SystemMonitor.shared.appendLog("导入完成，开始加载模型…")
         if Self.modelAvailable {
             state = .loading

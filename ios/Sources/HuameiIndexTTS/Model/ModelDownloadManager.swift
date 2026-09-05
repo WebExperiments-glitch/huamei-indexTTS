@@ -146,7 +146,7 @@ final class ModelDownloadManager: ObservableObject {
     }
 
     /// 流式 SHA256（增量分块，避免大文件整读）
-    private func sha256(url: URL) -> String {
+    static func sha256(url: URL) -> String {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return "" }
         defer { try? handle.close() }
         var ctx = CC_SHA256_CTX()
