@@ -1,5 +1,6 @@
 import Foundation
 import AVFoundation
+import Combine
 import MLXIndexTTS2Core
 
 /// 推断引擎（Stage 1：接 MLXIndexTTS2Core 真实推理）
