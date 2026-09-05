@@ -26,9 +26,23 @@ ios/build/
 
 # 本地研究/工具（不随仓库分发；git rm --cached 解除跟踪）
 scripts/
+p0/
 audit_final_report.md
 download_model.py
 plan_*.md
 research_*.md
 swift_engine_research.md
 diaoyanMAX.md
+.builder_init.*
+builder.json
+run*.log
+ms2.json
+ms_files.json
+
+# Xcode / SwiftPM
+.DS_Store
+DerivedData/
+.build/
+*.xcuserstate
+ios/*.xcodeproj
+ios/build/

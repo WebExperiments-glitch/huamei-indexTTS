@@ -1,9 +1,0 @@
-﻿gh : failed to get run log: Get "https://results-receiver.actions.githubusercontent.com/rest/runs/af111413-eb0e-4b76-af
-8e-aefd11d625b4/logs?filename=logs_91979780262.zip&signature=1788577359.70bb3a39b0c1fee4b555530f30d13a78e7f43d3037c8d2e
-1cb384221bfc0864d": net/http: TLS handshake timeout
-At line:15 char:1116
-+ ... ules\@vscode\ripgrep\bin'; gh run view 33939764849 --log 2>&1 | Out-F ...
-+                                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : NotSpecified: (failed to get r...ndshake timeout:String) [], RemoteException
-    + FullyQualifiedErrorId : NativeCommandError
- 
