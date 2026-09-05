@@ -11,7 +11,7 @@ public final class SafetensorsFile {
 
     public let name: String
     private let handle: FileHandle
-    private let header: [String: [String: Any]]
+    private let header: [String: Any]
     private let dataOffset: UInt64
 
     public init(path: String) throws {
@@ -76,7 +76,7 @@ public final class SafetensorsFile {
         }
         // F16
         return data.withUnsafeBytes { raw in
-            raw.bindMemory(to: UInt16.self).map { halfToFloat($0) }
+            raw.bindMemory(to: UInt16.self).map { SafetensorsFile.halfToFloat($0) }
         }
     }
 
@@ -98,12 +98,13 @@ public final class SafetensorsFile {
     private func decode(data: Data, dtype: String, shape: [Int], name: String) throws -> MLXArray {
         switch dtype {
         case "F16":
-            return MLXArray(fromHalfBytes: data, shape: shape)
+            return MLXArray.fromHalfBytes(data, shape: shape)
         case "F32":
-            return MLXArray(fromFloatBytes: data, shape: shape)
+            return MLXArray.fromFloatBytes(data, shape: shape)
         case "U32":
             // 打包量化权重：保留 uint32 语义（由 QuantizedLinear/quantizedMatmul 消费）
-            return MLXArray.uint32Array(data, shape: shape)
+            let words: [UInt32] = data.withUnsafeBytes { Array($0.bindMemory(to: UInt32.self)) }
+            return MLXArray(words, shape)
         case "I32", "I64":
             // 低频使用（如 index 类），按需转 Int32
             throw SafetensorsError.unsupported(dtype)
@@ -149,18 +150,5 @@ extension MLXArray {
             Array(raw.bindMemory(to: Float.self))
         }
         return MLXArray(floats, shape)
-    }
-
-    /// IEEE754 half → float（含 subnormal 正确处理）
-    private static func halfToFloat(_ h: UInt16) -> Float {
-        SafetensorsFile.halfToFloat(h)
-    }
-}
-
-// [UInt32] → MLXArray（0.29+ 官方路径：从原始字节按 dtype 构造）
-// ⚠️ 若 mlx-swift 版本 API 不同，在 Mac 上以仓库 README "first-compile" 章节核对实际签名。
-extension MLXArray {
-    static func uint32Array(_ bytes: Data, shape: [Int]) -> MLXArray {
-        MLXArray(data: bytes, dtype: .uint32, shape: shape)
     }
 }
