@@ -21,10 +21,16 @@ final class ModelImporter {
         let access = url.startAccessingSecurityScopedResource()
         defer { if access { url.stopAccessingSecurityScopedResource() } }
 
+        await MainActor.run { SystemMonitor.shared.appendLog("开始导入模型 ZIP：\(url.lastPathComponent)") }
+
         // 解压/复制 4GB 级大文件必须离主线程（不阻塞 UI）
         try await Task.detached(priority: .userInitiated) {
             let fm = FileManager.default
             try fm.createDirectory(at: modelDir, withIntermediateDirectories: true)
+
+            // 空间预检
+            let freeMB = Int64(ModelDownloadManager.freeSpace()) / 1024 / 1024
+            await MainActor.run { SystemMonitor.shared.appendLog("可用空间约：\(freeMB) MB") }
 
             // 解压到临时目录，再合并进模型目录（避免覆盖式解压出问题）
             let tmp = modelDir.deletingLastPathComponent()
@@ -32,7 +38,14 @@ final class ModelImporter {
             try fm.createDirectory(at: tmp, withIntermediateDirectories: true)
             defer { try? fm.removeItem(at: tmp) }
 
-            try fm.unzipItem(at: url, to: tmp)
+            await MainActor.run { SystemMonitor.shared.appendLog("开始解压（4GB 级，请耐心等待）…") }
+            do {
+                try fm.unzipItem(at: url, to: tmp)
+            } catch {
+                await MainActor.run { SystemMonitor.shared.appendLog("解压失败：\(error.localizedDescription)") }
+                throw error
+            }
+            await MainActor.run { SystemMonitor.shared.appendLog("解压完成，开始合并模型文件…") }
 
             // 找一个"内容根"：仅当解压后只有一个非隐藏目录、且没有同级文件时
             // 才进入该目录（兼容各种 zip 打包方式；避免把根级文件全丢）
@@ -43,8 +56,15 @@ final class ModelImporter {
             let topFiles = visible.filter { !topDirs.contains($0) }
             if topDirs.count == 1 && topFiles.isEmpty {
                 contentRoot = topDirs[0]
+                await MainActor.run { SystemMonitor.shared.appendLog("检测到外层目录：\(contentRoot.lastPathComponent)，已自动进入") }
             }
-            try mergeDirectory(from: contentRoot, to: modelDir)
+            do {
+                try mergeDirectory(from: contentRoot, to: modelDir)
+            } catch {
+                await MainActor.run { SystemMonitor.shared.appendLog("合并文件失败：\(error.localizedDescription)") }
+                throw error
+            }
+            await MainActor.run { SystemMonitor.shared.appendLog("模型 ZIP 导入完成") }
         }.value
     }
 
@@ -70,8 +90,10 @@ final class ModelImporter {
     static func importFolder(from url: URL, manifest: ModelManifest?) async throws {
         let access = url.startAccessingSecurityScopedResource()
         defer { if access { url.stopAccessingSecurityScopedResource() } }
+        await MainActor.run { SystemMonitor.shared.appendLog("开始导入模型文件夹：\(url.lastPathComponent)") }
         try FileManager.default.createDirectory(at: modelDir, withIntermediateDirectories: true)
         try copyRecursively(from: url, to: modelDir)
+        await MainActor.run { SystemMonitor.shared.appendLog("模型文件夹导入完成") }
     }
 
     /// 多选文件导入：按 Manifest 里 path 的最后一段匹配放置

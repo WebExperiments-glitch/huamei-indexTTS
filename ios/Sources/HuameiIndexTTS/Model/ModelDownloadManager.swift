@@ -138,6 +138,9 @@ final class ModelDownloadManager: ObservableObject {
         }
         try FileManager.default.moveItem(at: part, to: dest)
         doneBytes += Int64(entry.size)
+        await MainActor.run {
+            SystemMonitor.shared.appendLog("下载完成：\((entry.path as NSString).lastPathComponent)")
+        }
         state = .downloading(fraction: Double(doneBytes) / Double(max(totalBytes, 1)),
                              currentFile: entry.path)
     }

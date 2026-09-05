@@ -84,6 +84,7 @@ final class InferenceEngine: ObservableObject {
     /// 用户手动导入模型后刷新状态（替代网络下载）
     @MainActor
     func refreshAfterImport() async {
+        SystemMonitor.shared.appendLog("导入完成，开始加载模型…")
         if Self.modelAvailable {
             state = .loading
             do {
@@ -93,12 +94,15 @@ final class InferenceEngine: ObservableObject {
                 }.value
                 pipeline = pipe
                 state = .ready
+                SystemMonitor.shared.appendLog("模型加载成功，可以开始合成了")
             } catch {
                 // 文件不完整/缺关键件 → 保持缺失，提示继续导入
                 state = .missingModel
+                SystemMonitor.shared.appendLog("模型加载失败：\(error.localizedDescription)")
             }
         } else {
             state = .missingModel
+            SystemMonitor.shared.appendLog("未找到模型目录，请先导入模型")
         }
     }
 

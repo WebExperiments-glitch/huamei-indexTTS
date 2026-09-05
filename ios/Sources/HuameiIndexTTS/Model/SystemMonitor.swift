@@ -47,6 +47,10 @@ final class SystemMonitor: ObservableObject {
         if logs.count > maxLogs { logs.removeFirst(logs.count - maxLogs) }
     }
 
+    func clearLogs() {
+        logs.removeAll()
+    }
+
     private func tick() {
         cpu = Self.cpuUsage()
         let m = currentMemoryMB()

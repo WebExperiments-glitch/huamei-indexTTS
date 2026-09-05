@@ -5,8 +5,9 @@ import SwiftUI
 struct ModelStatusView: View {
 
     @EnvironmentObject private var engine: InferenceEngine
+    @ObservedObject private var monitor = SystemMonitor.shared
 
-    /// 由 RootView 注入：打开文件夹选择器
+    /// 由 RootView 注入：打开模型目录选择器
     var onImportFolder: () -> Void = {}
     /// 由 RootView 注入：打开 ZIP 选择器（推荐，一键导入）
     var onImportZip: () -> Void = {}
@@ -14,6 +15,14 @@ struct ModelStatusView: View {
     var isImporting: Bool = false
 
     var body: some View {
+        VStack(spacing: 12) {
+            statusContent
+            logPanel
+        }
+    }
+
+    @ViewBuilder
+    private var statusContent: some View {
         switch engine.state {
         case .missingModel:
             missingModelView
@@ -28,6 +37,39 @@ struct ModelStatusView: View {
         default:
             EmptyView()
         }
+    }
+
+    /// 运行日志面板（始终显示在主界面，便于排查）
+    @ViewBuilder
+    private var logPanel: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("运行日志")
+                    .font(Theme.Fonts.heading)
+                    .foregroundStyle(Theme.Colors.labelPrimary)
+                Spacer()
+                Button("清空") { monitor.clearLogs() }
+                    .font(Theme.Fonts.caption)
+            }
+            if monitor.logs.isEmpty {
+                Text("暂无日志。导入模型或下载时这里会实时显示进度与错误原因。")
+                    .font(Theme.Fonts.caption)
+                    .foregroundStyle(Theme.Colors.labelTertiary)
+            } else {
+                ForEach(Array(monitor.logs.suffix(8).reversed()), id: \.self) { line in
+                    Text(line)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(Theme.Colors.labelSecondary)
+                }
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.Colors.surfaceAlt, in: RoundedRectangle(cornerRadius: 16))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Theme.Colors.divider, lineWidth: 0.5)
+        )
     }
 
     /// 模型已就绪：展示状态 + 管理入口（重新导入/换模型）
