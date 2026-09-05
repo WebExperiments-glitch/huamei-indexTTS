@@ -9,7 +9,10 @@ options:
 packages:
   MLXSwift:
     url: https://github.com/ml-explore/mlx-swift.git
-    from: 0.30.0
+    from: "0.30.0"
+  ZIPFoundation:
+    url: https://github.com/weichsel/ZIPFoundation.git
+    from: "0.9.19"
 targets:
   MLXIndexTTS2Core:
     type: framework
@@ -51,7 +54,6 @@ targets:
       - package: MLXSwift
         product: MLX
       - package: ZIPFoundation
-        product: ZIPFoundation
 schemes:
   HuameiIndexTTS:
     build:
