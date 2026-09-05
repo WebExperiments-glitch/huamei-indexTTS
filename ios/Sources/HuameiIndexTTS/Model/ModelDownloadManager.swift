@@ -130,7 +130,7 @@ final class ModelDownloadManager: ObservableObject {
 
         // 流式 sha256 校验（分块读，内存占用恒定）；开发者模式可跳过
         if !Self.relaxedChecks {
-            let hash = sha256(url: part)
+            let hash = Self.sha256(url: part)
             guard hash == entry.sha256 else {
                 try? FileManager.default.removeItem(at: part)
                 throw URLError(.cannotDecodeRawData)
