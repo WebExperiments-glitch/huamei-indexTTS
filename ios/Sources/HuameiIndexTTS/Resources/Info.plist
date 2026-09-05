@@ -16,6 +16,20 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
 
+    <!-- 启动画面（iOS 26/27 必需：缺失会导致启动黑屏、iPad 以兼容
+         尺寸窗口显示出现黑边）。留空 dict = 系统默认白色启动页。 -->
+    <key>UILaunchScreen</key>
+    <dict/>
+
+    <!-- 本地化声明：主区域中文，避免系统组件回退英文 -->
+    <key>CFBundleDevelopmentRegion</key>
+    <string>zh_CN</string>
+    <key>CFBundleLocalizations</key>
+    <array>
+        <string>zh-Hans</string>
+        <string>en</string>
+    </array>
+
     <!-- 支持的方向：iPhone 竖+横，iPad 全向（避免黑边）。注意：不要加
          UIRequiresFullScreen —— iPadOS 26+ 该键已废弃且会触发兼容模式
          （场景固定 iPhone 尺寸居中，四周黑边）。 -->
