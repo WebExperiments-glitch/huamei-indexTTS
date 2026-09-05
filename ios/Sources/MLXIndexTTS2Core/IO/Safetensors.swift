@@ -27,7 +27,7 @@ public final class SafetensorsFile {
         let headerLen = UInt64(littleEndian: lenData.withUnsafeBytes { $0.load(as: UInt64.self) })
         let headerData = try fh.read(upToCount: Int(headerLen)) ?? Data()
         guard let obj = try? JSONSerialization.jsonObject(with: headerData) as? [String: Any] else {
-            throw SafetensorsError.badJSON
+            throw SafetensorsError.badJSON(name)
         }
         header = obj
         dataOffset = 8 + headerLen
