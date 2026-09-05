@@ -28,7 +28,7 @@ struct TextInputCard: View {
                         .padding(.vertical, 14)
                         .allowsHitTesting(false)
                 }
-                TextEditor(text: $s.text)
+                TextEditor(text: Bindable(s).text)
                     .focused($focused)
                     .font(Theme.Fonts.body)
                     .foregroundStyle(Theme.Colors.labelPrimary)
