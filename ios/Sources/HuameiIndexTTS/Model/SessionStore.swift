@@ -3,7 +3,6 @@ import SwiftUI
 /// App 全局状态（用户输入、合成进度、播放状态、版本号）
 /// Internal Beta 1
 @Observable
-@MainActor
 final class SessionStore {
 
     // MARK: - 用户输入

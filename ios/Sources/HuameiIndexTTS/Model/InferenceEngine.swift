@@ -10,7 +10,6 @@ import MLXIndexTTS2Core
 ///   feat1.json · feat2.json（73×192 / 73×1280）
 ///   prompt_<row>.json · refmel_<row>.json（A1 预计算说话人条件束，可选）
 @Observable
-@MainActor
 final class InferenceEngine {
 
     enum State: Equatable {
