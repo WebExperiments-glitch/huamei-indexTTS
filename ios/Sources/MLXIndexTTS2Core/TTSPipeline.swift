@@ -63,7 +63,8 @@ public final class TTSPipeline {
     static func loadJson(_ path: String, rows: Int, cols: Int) throws -> [[Float]] {
         guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
               let arr = try? JSONSerialization.jsonObject(with: data) as? [[Float]] else {
-            throw SafetensorsError.badJSON
+            throw NSError(domain: "TTSPipeline", code: 2,
+                          userInfo: [NSLocalizedDescriptionKey: "bad JSON: \((path as NSString).lastPathComponent)"])
         }
         return arr
     }
@@ -181,7 +182,7 @@ public final class TTSPipeline {
         let mel: MLXArray
         do {
             let sm = try ensureS2Mel()
-            guard let infer = s2melInfer else { throw SafetensorsError.badJSON }
+            guard let infer = s2melInfer else { throw SafetensorsError.badJSON("s2mel session unloaded") }
             onStage("s2mel", 0.75)
             let targetLen = Int(Double(sInfer.shape[1]) * TTSConfig.lengthRatio * config.durationFactor)
             let cond = infer.lengthRegulate(sInfer, targetLen: targetLen)   // [1,T',512]

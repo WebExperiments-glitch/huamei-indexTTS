@@ -111,15 +111,16 @@ struct SettingsSheet: View {
             LabeledContent("模型根目录", value: InferenceEngine.modelDir.path)
                 .lineLimit(1)
                 .truncationMode(.middle)
+            Button("清空模型数据（重新导入）", role: .destructive) { clearModels() }
         }
+    }
 
-        Section("日志（Beta）") {
-            ForEach(Array(monitor.logs.reversed()), id: \.self) { line in
-                Text(line)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.secondary)
-            }
-        }
+    /// 删除模型目录（模型文件损坏/残留时可重置重导）
+    private func clearModels() {
+        let dir = InferenceEngine.modelDir
+        try? FileManager.default.removeItem(at: dir)
+        SystemMonitor.shared.appendLog("已清空模型目录，请重新导入模型")
+        Task { @MainActor in await engine.refreshAfterImport() }
     }
 
     private var relaxedBinding: Binding<Bool> {

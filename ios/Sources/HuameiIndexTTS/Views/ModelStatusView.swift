@@ -48,15 +48,17 @@ struct ModelStatusView: View {
                     .font(Theme.Fonts.heading)
                     .foregroundStyle(Theme.Colors.labelPrimary)
                 Spacer()
+                Button("复制") { copyLogs() }
+                    .font(Theme.Fonts.caption)
                 Button("清空") { monitor.clearLogs() }
                     .font(Theme.Fonts.caption)
             }
             if monitor.logs.isEmpty {
-                Text("暂无日志。导入模型或下载时这里会实时显示进度与错误原因。")
+                Text("暂无日志。导入模型、下载或合成时这里会实时显示进度与错误原因。")
                     .font(Theme.Fonts.caption)
                     .foregroundStyle(Theme.Colors.labelTertiary)
             } else {
-                ForEach(Array(monitor.logs.suffix(8).reversed()), id: \.self) { line in
+                ForEach(Array(monitor.logs.suffix(12).reversed()), id: \.self) { line in
                     Text(line)
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(Theme.Colors.labelSecondary)
@@ -70,6 +72,13 @@ struct ModelStatusView: View {
             RoundedRectangle(cornerRadius: 16)
                 .stroke(Theme.Colors.divider, lineWidth: 0.5)
         )
+    }
+
+    /// 复制全部日志到剪贴板
+    private func copyLogs() {
+        let text = monitor.logs.joined(separator: "\n")
+        guard !text.isEmpty else { return }
+        UIPasteboard.general.string = text
     }
 
     /// 模型已就绪：展示状态 + 管理入口（重新导入/换模型）

@@ -118,14 +118,14 @@ public final class SafetensorsFile {
 public enum SafetensorsError: Error, LocalizedError {
     case cannotOpen(String)
     case badFormat
-    case badJSON
+    case badJSON(String)
     case missing(String)
     case unsupported(String)
     public var errorDescription: String? {
         switch self {
         case .cannotOpen(let p): return "cannot open \(p)"
         case .badFormat: return "bad safetensors header"
-        case .badJSON: return "bad safetensors JSON"
+        case .badJSON(let n): return "bad safetensors JSON: \(n)"
         case .missing(let n): return "tensor missing: \(n)"
         case .unsupported(let d): return "unsupported dtype: \(d)"
         }
