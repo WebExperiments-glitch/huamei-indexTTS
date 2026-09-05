@@ -78,14 +78,6 @@ public final class BigVGAN {
         }
     }
 
-    /// snake beta：y = x + sin²(x·α)/β，α=exp(α), β=exp(β)（logscale 存储）
-    private func snakeBeta(_ x: MLXArray, alpha: MLXArray, beta: MLXArray) -> MLXArray {
-        let a = alpha.exp()
-        let b = beta.exp()
-        let sin = Ops.sinOp(x * a)
-        return x + (sin * sin) / (b + 1e-9)
-    }
-
     /// 上采样：conv1d 插值（ConvTranspose 语义）—— im2col 反卷积兜底
     private func upsample(_ x: MLXArray, stage: Int, targetLen: Int) -> MLXArray {
         let (w, b) = ups[stage]
@@ -133,10 +125,18 @@ public final class BigVGAN {
             x = h
         }
         // post snake → conv_post(1,7,24) → tanh
-        x = snakeBeta(x, alpha: postAlpha, beta: postBeta)
+        x = snakeBetaOp(x, alpha: postAlpha, beta: postBeta)
         x = Ops.zeroPad(x, left: 3, right: 3)
         x = Ops.conv1d(x, w: convPostW, b: nil)
-        x = Ops.tanhOp(x)
+        x = MLX.tanh(x)
         return x
     }
+}
+
+/// snake beta（全局函数，避免嵌套类型访问外层实例成员）：y = x + sin²(x·α)/β
+private func snakeBetaOp(_ x: MLXArray, alpha: MLXArray, beta: MLXArray) -> MLXArray {
+    let a = alpha.exp()
+    let b = beta.exp()
+    let sin = MLX.sin(x * a)
+    return x + (sin * sin) / (b + 1e-9)
 }

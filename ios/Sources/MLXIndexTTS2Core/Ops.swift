@@ -94,7 +94,7 @@ enum Ops {
     /// conv1d：x [B,C,T]；w (out,k,in)；输出 [B,out,T]（stride 1，padding 由调用方预填）
     static func conv1d(_ x: MLXArray, w: MLXArray, b: MLXArray?,
                        dilation: Int = 1) -> MLXArray {
-        var out = MLX.conv1d(x, w, strides: 1, padding: [0, 0], dilation: dilation)
+        var out = MLX.conv1d(x, w, stride: 1, padding: [0, 0], dilation: dilation)
         if let b { out = out + b.reshaped([1, -1, 1]) }
         return out
     }

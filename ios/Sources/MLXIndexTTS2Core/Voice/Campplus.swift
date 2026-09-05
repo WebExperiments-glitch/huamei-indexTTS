@@ -80,7 +80,7 @@ public final class Campplus {
                     camL1B: try t(p + "cam_layer.linear1.bias"),
                     camL2W: p1(try t(p + "cam_layer.linear2.weight")),
                     camL2B: try t(p + "cam_layer.linear2.bias"),
-                    inChIn: inCh + li * grows[bi], bnIn: bns[bi],
+                    bnIn: bns[bi],
                     out: grows[bi], dil: dils[bi]
                 ))
             }
@@ -151,11 +151,16 @@ public final class Campplus {
 
     private func relu(_ x: MLXArray) -> MLXArray { MLX.maximum(x, 0) }
 
-    private func conv2d(_ x: MLXArray, _ w: MLXArray,
-                        strideH: Int = 1, strideW: Int = 1) -> MLXArray {
-        // x [N,C,H,W] w [O,Kh,Kw,I]
-        let out = MLX.conv2d(x, w, strides: [strideH, strideW], padding: [1, 1])
-        return out
+    private func conv2d(_ x: MLXArray, _ w: MLXArray) -> MLXArray {
+        // x [N,C,H,W] w [O,Kh,Kw,I]；mlx 单值 stride → 恒 1，下采样在调用端做（downsampleH）
+        MLX.conv2d(x, w, stride: 1, padding: [1, 1])
+    }
+
+    /// 等效 stride(2,1)：H 维隔行取样（reshape 分块取偶，零新 API）
+    private func downsampleH(_ x: MLXArray) -> MLXArray {
+        let (n, c, h, w) = (x.shape[0], x.shape[1], x.shape[2], x.shape[3])
+        let r = x.reshaped([n, c, h / 2, 2, w])
+        return r[0..., 0..., 0..., 0, 0...]
     }
 
     private func reluBN2d(_ bn: BatchNorm2d, _ x: MLXArray) -> MLXArray {
@@ -167,27 +172,23 @@ public final class Campplus {
         var inp = x
         if pad > 0 {
             let B = x.shape[0], C = x.shape[1]
-            inp = MLXArray.zeros([B, C, pad]).concatenated([inp], axis: 2)
-                .concatenated([MLXArray.zeros([B, C, pad])], axis: 2)
+            inp = MLX.concatenated([MLXArray.zeros([B, C, pad]), inp], axis: 2)
+            inp = MLX.concatenated([inp, MLXArray.zeros([B, C, pad])], axis: 2)
         }
-        return MLX.conv1d(inp, w, strides: stride, padding: [0, 0], dilation: dil)
+        return MLX.conv1d(inp, w, stride: stride, padding: [0, 0], dilation: dil)
     }
 
     private func res(_ x: MLXArray, r: (b1: MLXArray, bn1: BatchNorm2d, b2: MLXArray,
                                         bn2: BatchNorm2d, sc: MLXArray?, scbn: BatchNorm2d?),
-                     strideHeight: Int, strideWidth: Int) -> MLXArray {
-        var out = reluBN2d(r.bn1, conv2dStrided(x, r.b1, sH: strideHeight, sW: strideWidth))
-        out = r.bn2.run(conv2dStrided(out, r.b2, sH: 1, sW: 1))
+                     stride2: Bool) -> MLXArray {
+        var out = reluBN2d(r.bn1, stride2 ? downsampleH(conv2d(x, r.b1)) : conv2d(x, r.b1))
+        out = r.bn2.run(conv2d(out, r.b2))
         var sc = x
         if let sw = r.sc {
-            sc = conv2dStrided(x, sw, sH: strideHeight, sW: strideWidth)
+            sc = stride2 ? downsampleH(conv2d(x, sw)) : conv2d(x, sw)
             sc = (r.scbn)!.run(sc)
         }
         return relu(out + sc)
-    }
-
-    private func conv2dStrided(_ x: MLXArray, _ w: MLXArray, sH: Int, sW: Int) -> MLXArray {
-        conv2d(x, w, strideH: sH, strideW: sW)
     }
 }
 
