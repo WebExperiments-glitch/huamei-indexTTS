@@ -1,4 +1,5 @@
 import SwiftUI
+import MLXIndexTTS2Core
 
 /// 合成按钮 + 进度条（合二为一）
 struct SynthesizeControl: View {
