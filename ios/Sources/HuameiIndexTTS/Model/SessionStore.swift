@@ -15,6 +15,7 @@ final class SessionStore: ObservableObject {
 
     // MARK: - 高级（折叠）
     @Published var showExperimental: Bool   = false
+    @Published var developerMode: Bool      = false   // 开发者模式（Beta）
     @Published var doSample: Bool           = true
     @Published var temperature: Double      = 0.8
     @Published var topP: Double             = 0.8

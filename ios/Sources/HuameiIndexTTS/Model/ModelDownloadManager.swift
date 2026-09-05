@@ -36,6 +36,9 @@ final class ModelDownloadManager: ObservableObject {
     private var totalBytes: Int64 = 0
     private var doneBytes: Int64 = 0
 
+    /// 开发者模式放宽（跳过 sha256 校验、提高文件重试次数）
+    static var relaxedChecks: Bool = false
+
     static let modelDir: URL = InferenceEngine.modelDir
 
     init() {
@@ -89,7 +92,7 @@ final class ModelDownloadManager: ObservableObject {
     /// 顺序下载（每文件独立 downloadTask，写临时文件 → 流式 sha256 → 原子改名）
     private func runQueue(_ entries: [ModelManifest.Entry], base: String) async {
         for entry in entries {
-            var remaining = 1   // 每文件最多重试次数
+            var remaining = Self.relaxedChecks ? 3 : 1   // 开发者模式放宽：每文件最多重试 3 次
             while remaining >= 0 {
                 do {
                     try await downloadOne(entry, base: base, index: entries.firstIndex(of: entry) ?? 0, total: entries.count)
@@ -125,11 +128,13 @@ final class ModelDownloadManager: ObservableObject {
         }
         try FileManager.default.moveItem(at: tmpURL, to: part)
 
-        // 流式 sha256 校验（分块读，内存占用恒定）
-        let hash = sha256(url: part)
-        guard hash == entry.sha256 else {
-            try? FileManager.default.removeItem(at: part)
-            throw URLError(.cannotDecodeRawData)
+        // 流式 sha256 校验（分块读，内存占用恒定）；开发者模式可跳过
+        if !Self.relaxedChecks {
+            let hash = sha256(url: part)
+            guard hash == entry.sha256 else {
+                try? FileManager.default.removeItem(at: part)
+                throw URLError(.cannotDecodeRawData)
+            }
         }
         try FileManager.default.moveItem(at: part, to: dest)
         doneBytes += Int64(entry.size)

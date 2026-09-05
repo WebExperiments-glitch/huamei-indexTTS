@@ -15,10 +15,22 @@ final class InferenceEngine: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
 
     init() {
-        // 下载器状态变化 → 转发主对象变化（UI 观察 downloadState 刷新）
+        // 下载器状态变化 → 转发主对象变化（UI 观察 downloadState 刷新）+ 写入开发者日志
         downloader.$state
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .sink { [weak self] state in
+                self?.objectWillChange.send()
+                switch state {
+                case .downloading(_, let file):
+                    SystemMonitor.shared.appendLog("下载中：\((file as NSString).lastPathComponent)")
+                case .done:
+                    SystemMonitor.shared.appendLog("模型下载完成")
+                case .failed(let msg):
+                    SystemMonitor.shared.appendLog("下载失败：\(msg)")
+                case .idle:
+                    break
+                }
+            }
             .store(in: &cancellables)
     }
 
@@ -97,6 +109,7 @@ final class InferenceEngine: ObservableObject {
             return
         }
         state = .loading
+        SystemMonitor.shared.appendLog("开始加载模型…")
         do {
             let dir = Self.modelDir
             // 大 I/O（4 个 safetensors + 词典）放到后台执行，避免卡主线程
@@ -105,8 +118,10 @@ final class InferenceEngine: ObservableObject {
             }.value
             pipeline = pipe
             state = .ready
+            SystemMonitor.shared.appendLog("模型就绪")
         } catch {
             state = .failed(error.localizedDescription)
+            SystemMonitor.shared.appendLog("模型加载失败：\(error.localizedDescription)")
         }
     }
 

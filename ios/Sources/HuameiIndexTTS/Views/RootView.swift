@@ -12,6 +12,7 @@ struct RootView: View {
     @State private var showImportFolder: Bool = false
     @State private var showImportZip: Bool = false
     @State private var isImporting: Bool     = false
+    @State private var importError: String? = nil
 
     var body: some View {
         NavigationStack {
@@ -55,34 +56,40 @@ struct RootView: View {
         .sheet(isPresented: $showAbout) {
             AboutSheet()
         }
-        // 模型导入：选择整个模型文件夹（推荐，一次搞定）
-        .fileImporter(isPresented: $showImportFolder,
-                      allowedContentTypes: [.folder],
-                      allowsMultipleSelection: false) { result in
-            guard case .success(let urls) = result, let url = urls.first else { return }
-            isImporting = true
-            Task {
-                try? await ModelImporter.importFolder(from: url,
-                                                      manifest: ModelDownloadManager.loadManifest())
-                await engine.refreshAfterImport()
-                isImporting = false
-            }
-        }
-        // 模型导入：选择一个模型 ZIP，自动解压（最省事）
-        .fileImporter(isPresented: $showImportZip,
-                      allowedContentTypes: [.zip, .item],
-                      allowsMultipleSelection: false) { result in
-            guard case .success(let urls) = result, let url = urls.first else { return }
-            isImporting = true
-            Task {
-                defer { isImporting = false }
-                do {
-                    try await ModelImporter.importZip(from: url)
-                    await engine.refreshAfterImport()
-                } catch {
-                    importError = "模型导入失败：\(error.localizedDescription)"
+        // 模型导入：选择整个模型文件夹（推荐，一次搞定）——用 UIKit 选择器（fileImporter 在部分系统上弹不出）
+        .sheet(isPresented: $showImportFolder) {
+            DocumentPicker(allowFolders: true) { urls in
+                guard let url = urls.first else { return }
+                isImporting = true
+                Task {
+                    defer { isImporting = false }
+                    do {
+                        try await ModelImporter.importFolder(from: url,
+                                                             manifest: ModelDownloadManager.loadManifest())
+                        await engine.refreshAfterImport()
+                    } catch {
+                        importError = "模型导入失败：\(error.localizedDescription)"
+                    }
                 }
             }
+            .ignoresSafeArea()
+        }
+        // 模型导入：选择一个模型 ZIP，自动解压（最省事）
+        .sheet(isPresented: $showImportZip) {
+            DocumentPicker(allowFolders: false) { urls in
+                guard let url = urls.first else { return }
+                isImporting = true
+                Task {
+                    defer { isImporting = false }
+                    do {
+                        try await ModelImporter.importZip(from: url)
+                        await engine.refreshAfterImport()
+                    } catch {
+                        importError = "模型导入失败：\(error.localizedDescription)"
+                    }
+                }
+            }
+            .ignoresSafeArea()
         }
         .alert("导入模型出错", isPresented: .init(get: { importError != nil },
                                                set: { if !$0 { importError = nil } })) {
