@@ -153,7 +153,7 @@ public final class Campplus {
 
     private func conv2d(_ x: MLXArray, _ w: MLXArray) -> MLXArray {
         // x [N,C,H,W] w [O,Kh,Kw,I]；mlx 单值 stride → 恒 1，下采样在调用端做（downsampleH）
-        MLX.conv2d(x, w, stride: 1, padding: [1, 1])
+        MLX.conv2d(x, w, stride: 1, padding: 1)
     }
 
     /// 等效 stride(2,1)：H 维隔行取样（reshape 分块取偶，零新 API）
@@ -269,7 +269,7 @@ struct CAMDenseLayer {
 
     private func conv1x1(_ x: MLXArray, w: MLXArray) -> MLXArray {
         let B = x.shape[0], C = x.shape[1]
-        let out = MLX.conv1d(x, w, strides: 1, padding: [0, 0], dilation: 1)
+        let out = MLX.conv1d(x, w, stride: 1, padding: 0, dilation: 1)
         _ = (B, C)
         return out
     }
@@ -280,10 +280,10 @@ struct CAMDenseLayer {
         var inp = x
         let B = x.shape[0], C = x.shape[1]
         if pad > 0 {
-            inp = MLXArray.zeros([B, C, pad]).concatenated([inp], axis: 2)
-                .concatenated([MLXArray.zeros([B, C, pad])], axis: 2)
+            inp = MLX.concatenated([MLXArray.zeros([B, C, pad]), inp], axis: 2)
+            inp = MLX.concatenated([inp, MLXArray.zeros([B, C, pad])], axis: 2)
         }
-        return MLX.conv1d(inp, camLocalW, strides: 1, padding: [0, 0], dilation: dil)
+        return MLX.conv1d(inp, camLocalW, stride: 1, padding: 0, dilation: dil)
     }
 
     private func attention(_ x: MLXArray) -> MLXArray {
@@ -292,9 +292,9 @@ struct CAMDenseLayer {
         let globalMean = x.mean(axis: -1, keepDims: true)          // [B,bn,1]
         let seg = segPooling(x)                                    // [B,bn,1]
         var ctx = globalMean + seg
-        ctx = MLX.conv1d(ctx, camL1W, strides: 1, padding: [0, 0], dilation: 1) + camL1B.reshaped([1, -1, 1])  // bn→bn/2
+        ctx = MLX.conv1d(ctx, camL1W, stride: 1, padding: 0, dilation: 1) + camL1B.reshaped([1, -1, 1])  // bn→bn/2
         ctx = MLX.maximum(ctx, 0)
-        ctx = MLX.conv1d(ctx, camL2W, strides: 1, padding: [0, 0], dilation: 1) + camL2B.reshaped([1, -1, 1])  // →out
+        ctx = MLX.conv1d(ctx, camL2W, stride: 1, padding: 0, dilation: 1) + camL2B.reshaped([1, -1, 1])  // →out
         let gate = 1 / (1 + MLX.exp(-ctx))                          // sigmoid [B,out,1]
         // 广播到时间维
         return gate.broadcasted(to: [B, out, T], stream: .default)
@@ -308,7 +308,7 @@ struct CAMDenseLayer {
         var padded = x
         let padTail = S * segLen - T
         if padTail > 0 {
-            padded = padded.concatenated([MLXArray.zeros([B, C, padTail])], axis: 2)
+            padded = MLX.concatenated([padded, MLXArray.zeros([B, C, padTail])], axis: 2)
         }
         let pooled = padded.reshaped([B, C, S, segLen]).mean(axis: 3)   // [B,C,S]
         // 每段扩展 segLen 份，截断回 T

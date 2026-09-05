@@ -94,7 +94,7 @@ enum Ops {
     /// conv1d：x [B,C,T]；w (out,k,in)；输出 [B,out,T]（stride 1，padding 由调用方预填）
     static func conv1d(_ x: MLXArray, w: MLXArray, b: MLXArray?,
                        dilation: Int = 1) -> MLXArray {
-        var out = MLX.conv1d(x, w, stride: 1, padding: [0, 0], dilation: dilation)
+        var out = MLX.conv1d(x, w, stride: 1, padding: 0, dilation: dilation)
         if let b { out = out + b.reshaped([1, -1, 1]) }
         return out
     }
@@ -104,26 +104,29 @@ enum Ops {
         guard left > 0 || right > 0 else { return x }
         let (b, c, _) = (x.shape[0], x.shape[1], x.shape[2])
         var out = x
-        if left > 0 { out = MLXArray.zeros([b, c, left]).concatenated([out], axis: 2) }
-        if right > 0 { out = out.concatenated([MLXArray.zeros([b, c, right])], axis: 2) }
+        if left > 0 { out = MLX.concatenated([MLXArray.zeros([b, c, left]), out], axis: 2) }
+        if right > 0 { out = MLX.concatenated([out, MLXArray.zeros([b, c, right])], axis: 2) }
         return out
     }
 
     /// 反射 pad（尾轴；k5 → 2/2）
+    /// mlx-swift 无 flip → 对 slice 取行到内存再反转（仅 pad 小段，成本可忽略）
     static func reflectPad(_ x: MLXArray, left: Int, right: Int) -> MLXArray {
         guard left > 0 || right > 0 else { return x }
         let t = x.shape[2]
         var out = x
-        if left > 0 {
-            let slice = x[0..., 0..., 0..<left]
-            let rev = MLX.flip(slice, axis: 2)
-            out = rev.concatenated([out], axis: 2)
+        func reversedSlice(_ r: Range<Int>) -> MLXArray {
+            let sl = x[0..., 0..., r]
+            let b = sl.shape[0], c = sl.shape[1], l = sl.shape[2]
+            let f = sl.asFloatArray()
+            var rf = [Float](repeating: 0, count: f.count)
+            for i in 0..<(b * c) {
+                for j in 0..<l { rf[i * l + j] = f[i * l + (l - 1 - j)] }
+            }
+            return MLXArray(rf, sl.shape)
         }
-        if right > 0 {
-            let slice = x[0..., 0..., (t - right)..<t]
-            let rev = MLX.flip(slice, axis: 2)
-            out = out.concatenated([rev], axis: 2)
-        }
+        if left > 0 { out = MLX.concatenated([reversedSlice(0..<left), out], axis: 2) }
+        if right > 0 { out = MLX.concatenated([out, reversedSlice((t - right)..<t)], axis: 2) }
         return out
     }
 

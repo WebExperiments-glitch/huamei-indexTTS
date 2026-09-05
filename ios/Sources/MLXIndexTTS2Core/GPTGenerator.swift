@@ -67,7 +67,7 @@ public final class GPTGenerator {
                          seed: UInt64,
                          onToken: ((Int, Int) -> Void)?) throws -> [Int] {
 
-        var rng = SplitMix64(seed: seed)
+        _ = seed
         let d = TTSConfig.gptDim
 
         // ---- 前缀：conds ∥ [start]text[stop] ----
@@ -84,15 +84,15 @@ public final class GPTGenerator {
 
         // conds[3,D] + 文本行
         var prefixEmb = cond0
-        prefixEmb = prefixEmb.concatenated([MLXArray.zeros([1, d])], axis: 0)
-        prefixEmb = prefixEmb.concatenated([MLXArray.zeros([1, d])], axis: 0)   // [3,1280]
+        prefixEmb = MLX.concatenated([prefixEmb, MLXArray.zeros([1, d])], axis: 0)
+        prefixEmb = MLX.concatenated([prefixEmb, MLXArray.zeros([1, d])], axis: 0)   // [3,1280]
 
         let langRow = try rowVec("lang_embedding.weight", min(langId, TTSConfig.langCount - 1))
         for (pos, tok) in textSeq.enumerated() {
             var row = try rowVec("text_embedding.weight", tok)
             let tpos = try rowVec("text_pos_embedding.emb.weight", pos)
             row = row + tpos + langRow
-            prefixEmb = prefixEmb.concatenated([row], axis: 0)
+            prefixEmb = MLX.concatenated([prefixEmb, row], axis: 0)
         }
         // [3+L, D]
 
@@ -105,8 +105,8 @@ public final class GPTGenerator {
         // 首 token：start_mel(8192) 位置 0
         let startRow = try rowVec("mel_embedding.weight", TTSConfig.startMel)
         let startPos0 = try rowVec("mel_pos_embedding.emb.weight", 0)
-        var fullSeq = prefixEmb.concatenated([startRow + startPos0], axis: 0)   // [4+L,D]
-        fullSeq = fullSeq.expanded(to: [1, fullSeq.shape[0], d])
+        var fullSeq = MLX.concatenated([prefixEmb, startRow + startPos0], axis: 0)   // [4+L,D]
+        fullSeq = fullSeq.broadcast(to: [1, fullSeq.shape[0], d].asInt32)
 
         var hidden = model.forward(fullSeq, cacheK: &kvK, cacheV: &kvV,
                                    startPos: 0, ropeCosSin: ropeCS,
@@ -132,7 +132,7 @@ public final class GPTGenerator {
             // 下一 mel token：位置 = step（start=0，首个生成 token 位置 1）
             let row = try rowVec("mel_embedding.weight", tok)
             let pos = try rowVec("mel_pos_embedding.emb.weight", step)
-            let emb = (row + pos).expanded(to: [1, 1, d])
+            let emb = (row + pos).broadcast(to: [1, 1, d].asInt32)
             hidden = model.forward(emb, cacheK: &kvK, cacheV: &kvV,
                                    startPos: step, ropeCosSin: ropeCS,
                                    causalFull: false)

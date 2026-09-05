@@ -17,9 +17,9 @@ public struct S2MelInfer {
         // ⚠️ 官方 t_embedder scale=1000，实际 buffer 请从 torch .pt 导出（feat/资源阶段处理）
         let scale: Float = 1000.0
         let args = scale * t * MLXArray(freqs, [128])
-        let emb = args.cos().concatenated([args.sin()], axis: 0)   // [256]
+        let emb = MLX.concatenated([args.cos(), args.sin()], axis: 0)   // [256]
         // mlp0=w[0],b[1]; mlp2=w[2],b[3]
-        var h = Ops.linear(emb.expanded(to: [1, 256]), w: w.tEmbW[0], b: w.tEmbW[1])
+        var h = Ops.linear(emb.broadcast(to: [1, 256].asInt32), w: w.tEmbW[0], b: w.tEmbW[1])
         h = Ops.silu(h)
         return Ops.linear(h, w: w.tEmbW[2], b: w.tEmbW[3]).reshaped([-1])   // [512]
     }
@@ -27,7 +27,7 @@ public struct S2MelInfer {
     // MARK: - adaLN（transformer 版：split 前 scale 后 shift，直接乘；官方 AdaptiveLayerNorm）
     private func adaln(_ x: MLXArray, c: MLXArray, pw: MLXArray, pb: MLXArray) -> MLXArray {
         // c [1,512] → Linear → [1,1024]
-        let m = Ops.linear(c.expanded(to: [1, 512]), w: pw, b: pb).reshaped([-1])   // [1024]
+        let m = Ops.linear(c.broadcast(to: [1, 512].asInt32), w: pw, b: pb).reshaped([-1])   // [1024]
         let dim = TTSConfig.ditDim
         let scale = m[0..<dim]      // 前 = weight(scale)，直接乘
         let shift = m[dim..<(dim * 2)]
@@ -39,17 +39,17 @@ public struct S2MelInfer {
                            t: MLXArray, style: MLXArray) -> MLXArray {
         // x/promptX [1,80,T]；cond [1,T,512]；style [1,192]
         let B = x.shape[0], T = x.shape[2]
-        let t1 = timeEmb(t).expanded(to: [B, 512])                       // [B,512]
+        let t1 = timeEmb(t).broadcast(to: [B, 512].asInt32)                       // [B,512]
         // cond → 512
         var c = cond
         c = Ops.linear(c, w: w.condProjW, b: w.condProjB)                // [1,T,512]
         let xt = x.transposed(0, 2, 1)                                   // [1,T,80]
         let pxt = promptX.transposed(0, 2, 1)
         // cat [x,prompt,cond(512),style(192)] = 864
-        var xIn = xt.concatenated([pxt], axis: 2)
-        xIn = xIn.concatenated([c], axis: 2)
-        let styleT = style.expanded(to: [1, T, TTSConfig.spkDim])
-        xIn = xIn.concatenated([styleT], axis: 2)
+        var xIn = MLX.concatenated([xt, pxt], axis: 2)
+        xIn = MLX.concatenated([xIn, c], axis: 2)
+        let styleT = style.broadcast(to: [1, T, TTSConfig.spkDim].asInt32)
+        xIn = MLX.concatenated([xIn, styleT], axis: 2)
         xIn = Ops.linear(xIn, w: w.condMergeW, b: w.condMergeB)          // [1,T,512]
 
         // Transformer（13 层，非因果，uvit skip 0-5 → 7-12）
@@ -60,7 +60,7 @@ public struct S2MelInfer {
             var skipIn: MLXArray?
             if i > TTSConfig.ditLayers / 2 { skipIn = skipStack.popLast() }
             if let s = skipIn, let sw = blk.skipW, let sb = blk.skipB {
-                h = Ops.linear(h.concatenated([s], axis: 2), w: sw, b: sb)
+                h = Ops.linear(MLX.concatenated([h, s], axis: 2), w: sw, b: sb)
             }
             // attn
             let lnA = Ops.rmsNorm(h, weight: blk.anNormW, eps: 1e-5)
@@ -76,9 +76,9 @@ public struct S2MelInfer {
             q = Rotary.applyCPU(q, cs: freqT)
             k = Rotary.applyCPU(k, cs: freqT)
             // [T,H,HD] → [H,T,HD]（单 batch 后用 [1,H,T,HD] matmul）
-            let qB = q.transposed(1, 0, 2).expanded(to: [1, H, T, HD])
-            let kB = k.transposed(1, 0, 2).expanded(to: [1, H, T, HD])
-            let vB = v.transposed(1, 0, 2).expanded(to: [1, H, T, HD])
+            let qB = q.transposed(1, 0, 2).broadcast(to: [1, H, T, HD].asInt32)
+            let kB = k.transposed(1, 0, 2).broadcast(to: [1, H, T, HD].asInt32)
+            let vB = v.transposed(1, 0, 2).broadcast(to: [1, H, T, HD].asInt32)
             var sc = qB.matmul(kB.transposed(0, 1, 3, 2)) * (1.0 / Float(HD).squareRoot())
             sc = Ops.softmaxLast(sc)
             let ctxOut = sc.matmul(vB)                                    // [1,H,T,HD]
@@ -99,13 +99,13 @@ public struct S2MelInfer {
         h = adaln(lnT, c: t1, pw: w.tfNormProjW, pb: w.tfNormProjB)
 
         // skip_linear：cat(h, 原始 x80) → 512
-        h = Ops.linear(h.concatenated([xt], axis: 2), w: w.skipLinW, b: w.skipLinB)   // [1,T,512]
+        h = Ops.linear(MLX.concatenated([h, xt], axis: 2), w: w.skipLinW, b: w.skipLinB)   // [1,T,512]
 
         // wavenet 尾
         var wv = Ops.linear(h, w: w.conv1W, b: w.conv1B)                  // [1,T,512]
         wv = wv.transposed(0, 2, 1)                                       // [1,512,T]
         let t2 = timeEmb(t).reshaped([512])
-        let g2 = t2.expanded(to: [1, 512, 1])
+        let g2 = t2.broadcast(to: [1, 512, 1].asInt32)
         let wav = wavenet(x: wv, g: g2)                                   // [1,512,T]
         var out = wav.transposed(0, 2, 1)                                 // [1,T,512]
         let resAdd = Ops.linear(h, w: w.resProjW, b: w.resProjB)
@@ -151,7 +151,7 @@ public struct S2MelInfer {
         let half = ch2 / 2
         let h1 = t[0..., 0..<half, 0...]
         let h2 = t[0..., half..<ch2, 0...]
-        return Ops.tanhOp(h1) * Ops.sigmoidOp(h2)
+        return MLX.tanh(h1) * Ops.sigmoid(h2)
     }
 
     // MARK: - FinalLayer（官方：LN(no-affine,1e-6) → SiLU→Linear(512→1024) → (shift,scale) → x*(1+scale)+shift → Linear）
@@ -160,7 +160,7 @@ public struct S2MelInfer {
         let xN = Ops.layerNorm(x, weight: nil, bias: nil, eps: 1e-6)
         // adaLN_modulation = SiLU → Linear(512→1024)
         let s = Ops.silu(c)                                        // [1,512]
-        let m = Ops.linear(s.expanded(to: [1, 512]),
+        let m = Ops.linear(s.broadcast(to: [1, 512].asInt32),
                            w: w.finalAdaW, b: w.finalAdaB).reshaped([-1])   // [1024]
         // FinalLayer 约定（与 transformer 相反）：前 shift，后 scale，且用 (1+scale)
         let dim = TTSConfig.ditDim
@@ -179,7 +179,7 @@ public struct S2MelInfer {
         for i in 0..<4 {
             var y = Ops.conv1d(x, w: w.lrConvs[i].0, b: w.lrConvs[i].1)
             y = Ops.layerNorm(y, weight: w.lrNorms[i].0, bias: w.lrNorms[i].1, eps: 1e-5)
-            x = MLX.mish(y)
+            x = Ops.mish(y)
         }
         x = Ops.conv1d(x, w: w.lrFinal.0, b: w.lrFinal.1)
         return x.transposed(0, 2, 1)                                    // [1,T',512]
@@ -233,10 +233,10 @@ public struct S2MelInfer {
             let tVal = MLXArray([tSpan[s - 1]], [1])
             if cfg > 0 {
                 // stack [prompt,0] × [style,0] × [mu,0] × [x,x]
-                let px2 = promptX.concatenated([MLXArray.zeros([1, 80, T])], axis: 0)
-                let st2 = style.concatenated([MLXArray.zeros([1, TTSConfig.spkDim])], axis: 0)
-                let mu2 = mu.concatenated([MLXArray.zeros([1, T, 512])], axis: 0)
-                let xx = xt.concatenated([xt], axis: 0)
+                let px2 = MLX.concatenated([promptX, MLXArray.zeros([1, 80, T])], axis: 0)
+                let st2 = MLX.concatenated([style, MLXArray.zeros([1, TTSConfig.spkDim])], axis: 0)
+                let mu2 = MLX.concatenated([mu, MLXArray.zeros([1, T, 512])], axis: 0)
+                let xx = MLX.concatenated([xt, xt], axis: 0)
                 let tt = MLXArray([tSpan[s - 1], tSpan[s - 1]], [2])
                 var d = diTForward(x: xx, promptX: px2, cond: mu2, t: tt, style: st2)
                 let dHalf = d.shape[0] / 2

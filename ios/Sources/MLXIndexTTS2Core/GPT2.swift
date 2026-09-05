@@ -75,8 +75,8 @@ public final class GPT2 {
             if causalFull {
                 fullK = k; fullV = vT
             } else if let oldK = cacheK[i], let oldV = cacheV[i] {
-                fullK = oldK.concatenated([k], axis: 2)
-                fullV = oldV.concatenated([vT], axis: 2)
+                fullK = MLX.concatenated([oldK, k], axis: 2)
+                fullV = MLX.concatenated([oldV, vT], axis: 2)
             } else {
                 fullK = k; fullV = vT
             }

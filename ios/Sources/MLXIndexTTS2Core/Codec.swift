@@ -89,7 +89,7 @@ public final class SemanticCodecDecoder {
             for k in 0..<8 { embRows[t * 8 + k] = row[k] }
         }
         var x = MLXArray(embRows, [T, 8]).transposed(0, 1)  // [8, T]
-        x = x.expanded(to: [1, 8, T])
+        x = x.broadcast(to: [1, 8, T].asInt32)
         var q = Ops.conv1d(x, w: outProjW, b: outProjB)     // [1,1024,T]
         // decoder
         var feat = vocosBackbone(q)                          // [1,T,384]
