@@ -50,10 +50,10 @@ final class SessionStore: ObservableObject {
         var label: String {
             switch self {
             case .zh:  return "中文（简体）"
-            case .en:  return "English"
-            case .ja:  return "日本語"
-            case .es:  return "Español"
-            case .ar:  return "العربية"
+            case .en:  return "英语（English）"
+            case .ja:  return "日语（日本語）"
+            case .es:  return "西班牙语（Español）"
+            case .ar:  return "阿拉伯语（العربية）"
             }
         }
         /// LANGUAGE_DICT 索引（en=0, zh=1, de=2, es=3, ru=4, ko=5, fr=6, ja=7, …, ar=13）

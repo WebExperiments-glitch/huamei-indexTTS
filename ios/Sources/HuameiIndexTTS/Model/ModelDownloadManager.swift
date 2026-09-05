@@ -1,7 +1,7 @@
 import Foundation
-import CryptoKit
 import SwiftUI
 import Combine
+import CommonCrypto
 
 /// 模型清单：App 内按需下载的唯一数据源（打包进 Bundle）
 struct ModelManifest: Codable {
@@ -86,7 +86,7 @@ final class ModelDownloadManager: ObservableObject {
         return true
     }
 
-    /// 顺序下载（每文件独立 dataTask，写临时文件 → 校验 sha256 → 原子改名）
+    /// 顺序下载（每文件独立 downloadTask，写临时文件 → 流式 sha256 → 原子改名）
     private func runQueue(_ entries: [ModelManifest.Entry], base: String) async {
         for entry in entries {
             var remaining = 1   // 每文件最多重试次数
@@ -115,20 +115,18 @@ final class ModelDownloadManager: ObservableObject {
         try? FileManager.default.removeItem(at: part)
 
         let url = URL(string: base + entry.path)!
-        if #available(iOS 15.0, *) {
-            let (data, response) = try await URLSession.shared.data(from: url)
-            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-                throw URLError(.badServerResponse)
-            }
-            try data.write(to: part)
-        } else {
-            // iOS 17 起可用上面的全新 API；兜底同步路径（本项目最低 iOS 17）
-            let data = try Data(contentsOf: url)
-            try data.write(to: part)
-        }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 300   // 大文件首字节等待上限
 
-        // 校验
-        let hash = Data(try Data(contentsOf: part)).sha256Hex()
+        // 流式下载到临时文件（绝不能用 data(from:)，会整包驻留内存导致 OOM）
+        let (tmpURL, response) = try await URLSession.shared.download(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+        try FileManager.default.moveItem(at: tmpURL, to: part)
+
+        // 流式 sha256 校验（分块读，内存占用恒定）
+        let hash = sha256(url: part)
         guard hash == entry.sha256 else {
             try? FileManager.default.removeItem(at: part)
             throw URLError(.cannotDecodeRawData)
@@ -137,6 +135,24 @@ final class ModelDownloadManager: ObservableObject {
         doneBytes += Int64(entry.size)
         state = .downloading(fraction: Double(doneBytes) / Double(max(totalBytes, 1)),
                              currentFile: entry.path)
+    }
+
+    /// 流式 SHA256（增量分块，避免大文件整读）
+    private func sha256(url: URL) -> String {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return "" }
+        defer { try? handle.close() }
+        var ctx = CC_SHA256_CTX()
+        CC_SHA256_Init(&ctx)
+        while true {
+            let chunk = handle.readData(ofLength: 1 << 20)   // 1MB
+            if chunk.isEmpty { break }
+            chunk.withUnsafeBytes { buf in
+                _ = CC_SHA256_Update(&ctx, buf.baseAddress, CC_LONG(chunk.count))
+            }
+        }
+        var digest = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
+        CC_SHA256_Final(&digest, &ctx)
+        return digest.map { String(format: "%02x", $0) }.joined()
     }
 
     /// 剩余可用空间（Documents 所在卷）

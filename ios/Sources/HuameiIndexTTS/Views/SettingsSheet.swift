@@ -53,21 +53,21 @@ struct SettingsSheet: View {
 
     @ViewBuilder
     private var advancedBlock: some View {
-        Section("GPT-2 Sampling") {
-            Toggle("Enable sampling", isOn: $s.doSample)
+        Section("GPT-2 采样") {
+            Toggle("启用采样", isOn: $s.doSample)
             if s.doSample {
-                sliderRow("temperature", value: $s.temperature, range: 0.1...2.0, step: 0.05)
-                sliderRow("top_p", value: $s.topP, range: 0.0...1.0, step: 0.05)
-                Stepper("top_k   \(s.topK)", value: $s.topK, in: 1...100)
-                Stepper("num_beams   \(s.numBeams)", value: $s.numBeams, in: 1...10)
+                sliderRow("温度", value: $s.temperature, range: 0.1...2.0, step: 0.05)
+                sliderRow("Top-P", value: $s.topP, range: 0.0...1.0, step: 0.05)
+                Stepper("Top-K   \(s.topK)", value: $s.topK, in: 1...100)
+                Stepper("束宽   \(s.numBeams)", value: $s.numBeams, in: 1...10)
             }
         }
         Section("惩罚与长度") {
-            Stepper("repetition_penalty  \(String(format: "%.1f", s.repetitionPenalty))",
+            Stepper("重复惩罚  \(String(format: "%.1f", s.repetitionPenalty))",
                     value: $s.repetitionPenalty, in: 1.0...20.0, step: 0.5)
-            Stepper("length_penalty  \(String(format: "%.1f", s.lengthPenalty))",
+            Stepper("长度惩罚  \(String(format: "%.1f", s.lengthPenalty))",
                     value: $s.lengthPenalty, in: -5.0...5.0, step: 0.5)
-            Stepper("max_mel_tokens  \(s.maxMelTokens)",
+            Stepper("最大谱图长度  \(s.maxMelTokens)",
                     value: $s.maxMelTokens, in: 50...1815, step: 10)
         }
     }

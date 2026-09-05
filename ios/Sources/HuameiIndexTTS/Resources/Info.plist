@@ -16,6 +16,10 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
 
+    <!-- 强制全屏（避免 iPad 窗口化/兼容模式下出现黑边） -->
+    <key>UIRequiresFullScreen</key>
+    <true/>
+
     <!-- 支持的方向：iPhone 竖+横，iPad 全向（避免黑边） -->
     <key>UISupportedInterfaceOrientations</key>
     <array>

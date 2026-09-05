@@ -137,7 +137,7 @@ final class InferenceEngine: ObservableObject {
                                 channels: 1, interleaved: false)!
         guard let file = try? AVAudioFile(forWriting: url, settings: fmt.settings) else {
             throw NSError(domain: "WAV", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "cannot create wav"])
+                          userInfo: [NSLocalizedDescriptionKey: "无法创建音频文件"])
         }
         let buf = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: AVAudioFrameCount(samples.count))!
         buf.frameLength = AVAudioFrameCount(samples.count)
