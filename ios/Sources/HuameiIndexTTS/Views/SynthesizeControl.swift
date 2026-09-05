@@ -4,8 +4,8 @@ import MLXIndexTTS2Core
 /// 合成按钮 + 进度条（合二为一）
 struct SynthesizeControl: View {
 
-    @Environment(SessionStore.self)  private var s
-    @Environment(InferenceEngine.self) private var engine
+    @EnvironmentObject private var s: SessionStore
+    @EnvironmentObject private var engine: InferenceEngine
     @State private var task: Task<Void, Never>?
 
     var body: some View {

@@ -1,6 +1,7 @@
 import Foundation
 import CryptoKit
 import SwiftUI
+import Combine
 
 /// 模型清单：App 内按需下载的唯一数据源（打包进 Bundle）
 struct ModelManifest: Codable {
@@ -21,8 +22,7 @@ struct ModelManifest: Codable {
 
 /// 零门槛：缺模型就自动从魔搭下载（免登录、进度、断点重试、sha256 校验）。
 /// 使用方只需一个入口：`ModelDownloadManager.download(group:)`。
-@Observable
-final class ModelDownloadManager {
+final class ModelDownloadManager: ObservableObject {
 
     enum State: Equatable {
         case idle                // 未开始
@@ -31,7 +31,7 @@ final class ModelDownloadManager {
         case failed(String)
     }
 
-    private(set) var state: State = .idle
+    private(set) @Published var state: State = .idle
     private var manifest: ModelManifest?
     private var totalBytes: Int64 = 0
     private var doneBytes: Int64 = 0

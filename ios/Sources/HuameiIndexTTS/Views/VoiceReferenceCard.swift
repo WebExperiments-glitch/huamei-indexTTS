@@ -3,7 +3,7 @@ import SwiftUI
 /// 克隆音频参考卡（点击 → AudioSourceSheet 4 入口）
 struct VoiceReferenceCard: View {
 
-    @Environment(SessionStore.self) private var s
+    @EnvironmentObject private var s: SessionStore
     let onPick: () -> Void
 
     var body: some View {

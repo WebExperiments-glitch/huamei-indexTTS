@@ -9,10 +9,17 @@ import MLXIndexTTS2Core
 ///   multilingual_zh_ja_yue_char_del.tiktoken · specials.json
 ///   feat1.json · feat2.json（73×192 / 73×1280）
 ///   prompt_<row>.json · refmel_<row>.json（A1 预计算说话人条件束，可选）
-@Observable
-final class InferenceEngine {
+final class InferenceEngine: ObservableObject {
 
-    init() {}
+    private var cancellables = Set<AnyCancellable>()
+
+    init() {
+        // 下载器状态变化 → 转发主对象变化（UI 观察 downloadState 刷新）
+        downloader.$state
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
+    }
 
     enum State: Equatable {
         case uninitialized
@@ -22,7 +29,7 @@ final class InferenceEngine {
         case failed(String)
     }
 
-    private(set) var state: State = .uninitialized
+    private(set) @Published var state: State = .uninitialized
     private var pipeline: TTSPipeline?
 
     /// 傻瓜式模型下载器（缺模型 → 一键下载 → 自动就绪）

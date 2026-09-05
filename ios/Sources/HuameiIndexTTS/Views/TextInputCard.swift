@@ -3,7 +3,7 @@ import SwiftUI
 /// 文本输入卡（带字符计数 + 多行自适应）
 struct TextInputCard: View {
 
-    @Environment(SessionStore.self) private var s
+    @EnvironmentObject private var s: SessionStore
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -28,7 +28,7 @@ struct TextInputCard: View {
                         .padding(.vertical, 14)
                         .allowsHitTesting(false)
                 }
-                TextEditor(text: Bindable(s).text)
+                TextEditor(text: $s.text)
                     .focused($focused)
                     .font(Theme.Fonts.body)
                     .foregroundStyle(Theme.Colors.labelPrimary)

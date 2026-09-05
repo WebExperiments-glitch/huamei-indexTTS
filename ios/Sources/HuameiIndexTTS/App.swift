@@ -11,8 +11,8 @@ struct HuameiIndexTTSApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
-                .environment(session)
-                .environment(engine)
+                .environmentObject(session)
+                .environmentObject(engine)
                 .preferredColorScheme(.light)             // 主色白橙
                 .tint(Theme.Colors.accent)
                 .task { await engine.prepareIfNeeded() }

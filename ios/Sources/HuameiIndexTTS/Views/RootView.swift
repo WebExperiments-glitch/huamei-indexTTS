@@ -4,7 +4,7 @@ import SwiftUI
 /// Internal Beta 1
 struct RootView: View {
 
-    @Environment(SessionStore.self) private var s
+    @EnvironmentObject private var s: SessionStore
     @State private var showAudioSheet: Bool  = false
     @State private var showSettingsSheet: Bool = false
     @State private var showAbout: Bool       = false
@@ -53,7 +53,5 @@ struct RootView: View {
     }
 }
 
-#Preview {
-    RootView()
-        .environment(SessionStore())
+.environmentObject(SessionStore())
 }

@@ -4,7 +4,7 @@ import SwiftUI
 /// 目标：用户什么都不用懂，按一个按钮等它自己好。
 struct ModelStatusView: View {
 
-    @Environment(InferenceEngine.self) private var engine
+    @EnvironmentObject private var engine: InferenceEngine
 
     var body: some View {
         switch engine.state {

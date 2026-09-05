@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 /// 4 选项音源选择 Sheet（核心交互）
 struct AudioSourceSheet: View {
 
-    @Environment(SessionStore.self) private var s
+    @EnvironmentObject private var s: SessionStore
     @Environment(\.dismiss)        private var dismiss
     @State private var showFilePicker = false
     @State private var showVideoPicker = false

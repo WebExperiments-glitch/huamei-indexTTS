@@ -3,7 +3,7 @@ import SwiftUI
 /// 合成结果播放卡
 struct ResultCard: View {
 
-    @Environment(SessionStore.self) private var s
+    @EnvironmentObject private var s: SessionStore
     @State private var player = AudioPlayer()
 
     var body: some View {
