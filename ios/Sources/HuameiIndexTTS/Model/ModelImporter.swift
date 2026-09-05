@@ -1,5 +1,6 @@
 import Foundation
 import UniformTypeIdentifiers
+import ZIPFoundation
 
 /// 模型导入器：让用户从「文件」App 直接提供模型（替代网络下载）
 ///
@@ -13,6 +14,51 @@ final class ModelImporter {
 
     /// 文件选择器可选的类型（safetensors 无系统类型，用 .data 兜底）
     static let fileTypes: [UTType] = [.data, .json, .yaml, .text, .item]
+
+    /// 导入模型 ZIP（推荐）：一个 zip 一次搞定，自动解压到模型目录
+    /// zip 内部可以是「直接是模型文件」或「套一层目录」都兼容
+    static func importZip(from url: URL) async throws {
+        let access = url.startAccessingSecurityScopedResource()
+        defer { if access { url.stopAccessingSecurityScopedResource() } }
+        let fm = FileManager.default
+        try fm.createDirectory(at: modelDir, withIntermediateDirectories: true)
+
+        // 解压到临时目录，再合并进模型目录（避免覆盖式解压出问题）
+        let tmp = modelDir.deletingLastPathComponent()
+            .appendingPathComponent("_unzip-\(UUID().uuidString.prefix(6))", isDirectory: true)
+        try fm.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: tmp) }
+
+        try fm.unzipItem(at: url, to: tmp)
+
+        // 找一个"内容根"：如果解压出来只有一个非隐藏目录，进入它
+        var contentRoot = tmp
+        let topItems = (try? fm.contentsOfDirectory(at: tmp, includingPropertiesForKeys: nil)) ?? []
+        let topDirs = topItems.filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+            && !$0.lastPathComponent.hasPrefix(".") }
+        if topDirs.count == 1 {
+            contentRoot = topDirs[0]
+        }
+        try mergeDirectory(from: contentRoot, to: modelDir)
+    }
+
+    /// 递归合并：把 src 下所有内容复制进 dst（同名文件覆盖）
+    private static func mergeDirectory(from src: URL, to dst: URL) throws {
+        let fm = FileManager.default
+        try fm.createDirectory(at: dst, withIntermediateDirectories: true)
+        let items = try fm.contentsOfDirectory(at: src, includingPropertiesForKeys: nil)
+        for item in items {
+            if item.lastPathComponent.hasPrefix(".") { continue }
+            let isDir = (try? item.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+            let target = dst.appendingPathComponent(item.lastPathComponent)
+            try? fm.removeItem(at: target)
+            if isDir {
+                try mergeDirectory(from: item, to: target)
+            } else {
+                try fm.copyItem(at: item, to: target)
+            }
+        }
+    }
 
     /// 导入文件夹：递归复制整个目录结构到 Documents/huamei-models/
     static func importFolder(from url: URL, manifest: ModelManifest?) async throws {

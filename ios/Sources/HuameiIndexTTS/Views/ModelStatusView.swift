@@ -50,7 +50,7 @@ struct ModelStatusView: View {
                 VStack(spacing: 10) {
                     Label("还没有模型", systemImage: "externaldrive.badge.plus")
                         .font(.subheadline.weight(.semibold))
-                    Text("把模型文件夹放进「文件」App，选择导入后即可使用；\n也可以联网自动下载（约 3.7GB）")
+                    Text("把模型压缩包（ZIP）或文件夹放进「文件」App，\n选择导入后即可使用，一键搞定")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -58,14 +58,17 @@ struct ModelStatusView: View {
                         ProgressView("正在导入模型…")
                             .padding(.vertical, 6)
                     }
-                    Button(action: onImportFolder) {
-                        Text("导入模型文件夹")
+                    Button(action: onImportZip) {
+                        Text("导入模型 ZIP（推荐）")
                             .font(.headline)
-                            .padding(.horizontal, 28)
+                            .padding(.horizontal, 24)
                             .padding(.vertical, 10)
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(isImporting)
+                    Button("导入模型文件夹") { onImportFolder() }
+                        .font(.subheadline)
+                        .disabled(isImporting)
                     Button("联网自动下载") { engine.startModelDownload() }
                         .font(.subheadline)
                         .disabled(isImporting)

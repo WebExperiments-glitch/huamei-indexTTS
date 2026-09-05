@@ -50,6 +50,8 @@ targets:
       - target: MLXIndexTTS2Core
       - package: MLXSwift
         product: MLX
+      - package: ZIPFoundation
+        product: ZIPFoundation
 schemes:
   HuameiIndexTTS:
     build:

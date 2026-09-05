@@ -67,6 +67,18 @@ struct RootView: View {
                 isImporting = false
             }
         }
+        // 模型导入：选择一个模型 ZIP，自动解压（最省事）
+        .fileImporter(isPresented: $showImportZip,
+                      allowedContentTypes: [.zip],
+                      allowsMultipleSelection: false) { result in
+            guard case .success(let urls) = result, let url = urls.first else { return }
+            isImporting = true
+            Task {
+                try? await ModelImporter.importZip(from: url)
+                await engine.refreshAfterImport()
+                isImporting = false
+            }
+        }
     }
 }
 
