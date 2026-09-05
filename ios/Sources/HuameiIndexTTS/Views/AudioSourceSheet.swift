@@ -27,9 +27,9 @@ struct AudioSourceSheet: View {
             VStack(spacing: 10) {
                 sourceRow(icon: "mic.fill",
                           title: "应用内录音",
-                          subtitle: "可直接录制您的嗓音",
+                          subtitle: recorder.isRecording ? "录音中…" : (recorder.status ?? "可直接录制您的嗓音"),
                           tint: Theme.Colors.accent,
-                          disabled: recorder.isRecording) {
+                          disabled: recorder.isRecording || recorder.status != nil) {
                     startRecording()
                 }
                 sourceRow(icon: "music.note",
