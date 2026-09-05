@@ -69,6 +69,27 @@ final class InferenceEngine: ObservableObject {
         }
     }
 
+    /// 用户手动导入模型后刷新状态（替代网络下载）
+    @MainActor
+    func refreshAfterImport() async {
+        if Self.modelAvailable {
+            state = .loading
+            do {
+                let dir = Self.modelDir
+                let pipe = try await Task.detached(priority: .userInitiated) {
+                    try TTSPipeline(modelDir: dir)
+                }.value
+                pipeline = pipe
+                state = .ready
+            } catch {
+                // 文件不完整/缺关键件 → 保持缺失，提示继续导入
+                state = .missingModel
+            }
+        } else {
+            state = .missingModel
+        }
+    }
+
     func prepareIfNeeded() async {
         guard state == .uninitialized || state == .missingModel else { return }
         guard Self.modelAvailable else {

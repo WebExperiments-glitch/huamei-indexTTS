@@ -6,6 +6,11 @@ struct ModelStatusView: View {
 
     @EnvironmentObject private var engine: InferenceEngine
 
+    /// 由 RootView 注入：打开文件夹选择器
+    var onImportFolder: () -> Void = {}
+    /// 导入进行中（RootView 维护）
+    var isImporting: Bool = false
+
     var body: some View {
         switch engine.state {
         case .missingModel:
@@ -43,20 +48,27 @@ struct ModelStatusView: View {
                 Button("重试") { engine.startModelDownload() }
             case .idle, .done:
                 VStack(spacing: 10) {
-                    Label("首次使用需要下载模型", systemImage: "arrow.down.circle.fill")
+                    Label("还没有模型", systemImage: "externaldrive.badge.plus")
                         .font(.subheadline.weight(.semibold))
-                    Text("约 3.7GB，下载完成后即可正常使用（一次性）")
+                    Text("把模型文件夹放进「文件」App，选择导入后即可使用；\n也可以联网自动下载（约 3.7GB）")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Button {
-                        engine.startModelDownload()
-                    } label: {
-                        Text("一键下载")
+                        .multilineTextAlignment(.center)
+                    if isImporting {
+                        ProgressView("正在导入模型…")
+                            .padding(.vertical, 6)
+                    }
+                    Button(action: onImportFolder) {
+                        Text("导入模型文件夹")
                             .font(.headline)
                             .padding(.horizontal, 28)
                             .padding(.vertical, 10)
                     }
                     .buttonStyle(.borderedProminent)
+                    .disabled(isImporting)
+                    Button("联网自动下载") { engine.startModelDownload() }
+                        .font(.subheadline)
+                        .disabled(isImporting)
                 }
             }
         }

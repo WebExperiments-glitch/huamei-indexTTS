@@ -8,12 +8,15 @@ struct RootView: View {
     @State private var showAudioSheet: Bool  = false
     @State private var showSettingsSheet: Bool = false
     @State private var showAbout: Bool       = false
+    @State private var showImportFolder: Bool = false
+    @State private var isImporting: Bool     = false
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 18) {
-                    ModelStatusView()
+                    ModelStatusView(onImportFolder: { showImportFolder = true },
+                                    isImporting: isImporting)
                     VoiceReferenceCard(onPick: { showAudioSheet = true })
                     TextInputCard()
                     SynthesizeControl()
@@ -50,10 +53,24 @@ struct RootView: View {
         .sheet(isPresented: $showAbout) {
             AboutSheet()
         }
+        // 模型导入：选择整个模型文件夹（推荐，一次搞定）
+        .fileImporter(isPresented: $showImportFolder,
+                      allowedContentTypes: [.folder],
+                      allowsMultipleSelection: false) { result in
+            guard case .success(let urls) = result, let url = urls.first else { return }
+            isImporting = true
+            Task {
+                try? await ModelImporter.importFolder(from: url,
+                                                      manifest: ModelDownloadManager.loadManifest())
+                await engine.refreshAfterImport()
+                isImporting = false
+            }
+        }
     }
 }
 
 #Preview {
     RootView()
         .environmentObject(SessionStore())
+        .environmentObject(InferenceEngine())
 }
