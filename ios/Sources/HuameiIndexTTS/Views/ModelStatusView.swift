@@ -8,6 +8,8 @@ struct ModelStatusView: View {
 
     /// 由 RootView 注入：打开文件夹选择器
     var onImportFolder: () -> Void = {}
+    /// 由 RootView 注入：打开 ZIP 选择器（推荐，一键导入）
+    var onImportZip: () -> Void = {}
     /// 导入进行中（RootView 维护）
     var isImporting: Bool = false
 

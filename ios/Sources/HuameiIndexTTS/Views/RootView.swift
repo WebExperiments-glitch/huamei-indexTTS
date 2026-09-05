@@ -10,6 +10,7 @@ struct RootView: View {
     @State private var showSettingsSheet: Bool = false
     @State private var showAbout: Bool       = false
     @State private var showImportFolder: Bool = false
+    @State private var showImportZip: Bool = false
     @State private var isImporting: Bool     = false
 
     var body: some View {
