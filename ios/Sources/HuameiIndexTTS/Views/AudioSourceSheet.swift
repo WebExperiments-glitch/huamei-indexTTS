@@ -4,11 +4,15 @@ import UniformTypeIdentifiers
 /// 4 选项音源选择 Sheet（核心交互）
 struct AudioSourceSheet: View {
 
+    /// 文件选择路由（统一走 UIKit DocumentPicker，规避 fileImporter 弹不出的系统问题）
+    private enum FilePick: String, Identifiable {
+        case audio, video, files
+        var id: String { rawValue }
+    }
+
     @EnvironmentObject private var s: SessionStore
     @Environment(\.dismiss)        private var dismiss
-    @State private var showFilePicker = false
-    @State private var showVideoPicker = false
-    @State private var showFilesPicker = false
+    @State private var picker: FilePick?
     @State private var recorder = AudioRecorder()
 
     var body: some View {
@@ -22,29 +26,29 @@ struct AudioSourceSheet: View {
 
             VStack(spacing: 10) {
                 sourceRow(icon: "mic.fill",
-                          title: "Record in app",
-                          subtitle: "Save as M4A / AAC  · compatible with any MP3 player",
+                          title: "应用内录音",
+                          subtitle: "可直接录制您的嗓音",
                           tint: Theme.Colors.accent,
                           disabled: recorder.isRecording) {
                     startRecording()
                 }
                 sourceRow(icon: "music.note",
-                          title: "Upload audio file",
+                          title: "上传音频文件",
                           subtitle: "MP3 · WAV · M4A · FLAC",
                           tint: Theme.Colors.accentSoft) {
-                    showFilePicker = true
+                    picker = .audio
                 }
                 sourceRow(icon: "film",
-                          title: "Upload video file",
-                          subtitle: "MP4 · MOV · audio track auto-extracted",
+                          title: "上传视频文件",
+                          subtitle: "MP4 · MOV · 自动提取音轨",
                           tint: Theme.Colors.accentSoft) {
-                    showVideoPicker = true
+                    picker = .video
                 }
-                sourceRow(icon: "folder",
-                          title: "Pick from Files / iCloud Drive",
-                          subtitle: "Browse any location",
+                sourceRow(icon: "tray.and.arrow.down",
+                          title: "从文件 / iCloud 选择",
+                          subtitle: "可浏览任意位置",
                           tint: Theme.Colors.accentSoft) {
-                    showFilesPicker = true
+                    picker = .files
                 }
             }
             .padding(.horizontal, 16)
@@ -56,31 +60,23 @@ struct AudioSourceSheet: View {
             }
 
             Button(role: .cancel, action: { dismiss() }) {
-                Text("Cancel").font(Theme.Fonts.callout)
+                Text("取消").font(Theme.Fonts.callout)
             }
             .padding(.top, 4)
         }
         .padding(.bottom, 28)
         .background(Theme.Colors.canvas.ignoresSafeArea())
-        .fileImporter(isPresented: $showFilePicker,
-                      allowedContentTypes: AudioImporter.audioTypes,
-                      allowsMultipleSelection: false) { result in
-            AudioImporter.handle(result: result) { s.referenceURL = $0 }
+        // 统一 UIKit 文档选择器（音频 / 视频 / 任意文件）
+        .sheet(item: $picker) { kind in
+            DocumentPicker(allowFolders: false) { urls in
+                handlePick(kind, urls)
+            }
+            .ignoresSafeArea()
         }
-        .fileImporter(isPresented: $showVideoPicker,
-                      allowedContentTypes: AudioImporter.videoTypes,
-                      allowsMultipleSelection: false) { result in
-            handleVideo(result)
-        }
-        .fileImporter(isPresented: $showFilesPicker,
-                      allowedContentTypes: [.audio, .video, .data],
-                      allowsMultipleSelection: false) { result in
-            AudioImporter.handle(result: result) { s.referenceURL = $0 }
-        }
-        .alert("Recording failed",
+        .alert("录音失败",
                isPresented: .init(get: { recorder.error != nil },
                                   set: { if !$0 { recorder.error = nil } })) {
-            Button("OK") { recorder.error = nil }
+            Button("好") { recorder.error = nil }
         } message: { Text(recorder.error ?? "") }
     }
 
@@ -117,6 +113,19 @@ struct AudioSourceSheet: View {
         .buttonStyle(.plain)
         .glassCard(cornerRadius: 16)
         .disabled(disabled)
+    }
+
+    // 选择完成：导入到沙盒并按类型处理
+    private func handlePick(_ kind: FilePick, _ urls: [URL]) {
+        picker = nil
+        guard let url = urls.first else { return }
+        let result: Result<[URL], Error> = .success([url])
+        switch kind {
+        case .audio, .files:
+            AudioImporter.handle(result: result) { s.referenceURL = $0 }
+        case .video:
+            handleVideo(result)
+        }
     }
 
     private var recordingBar: some View {

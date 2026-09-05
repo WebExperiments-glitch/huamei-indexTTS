@@ -46,9 +46,20 @@ final class ModelDownloadManager: ObservableObject {
     }
 
     static func loadManifest() -> ModelManifest? {
-        guard let url = Bundle.main.url(forResource: "ModelManifest", withExtension: "json"),
-              let data = try? Data(contentsOf: url) else { return nil }
-        return try? JSONDecoder().decode(ModelManifest.self, from: data)
+        guard let url = Bundle.main.url(forResource: "ModelManifest", withExtension: "json") else {
+            SystemMonitor.shared.appendLog("清单：Bundle 内未找到 ModelManifest.json")
+            return nil
+        }
+        guard let data = try? Data(contentsOf: url) else {
+            SystemMonitor.shared.appendLog("清单：文件读取失败 \(url.path)")
+            return nil
+        }
+        do {
+            return try JSONDecoder().decode(ModelManifest.self, from: data)
+        } catch {
+            SystemMonitor.shared.appendLog("清单：解码失败 \(error.localizedDescription)")
+            return nil
+        }
     }
 
     /// 指定组是否已就位

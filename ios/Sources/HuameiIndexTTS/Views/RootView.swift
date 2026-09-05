@@ -61,6 +61,7 @@ struct RootView: View {
                 AboutSheet()
             case .importFolder:
                 DocumentPicker(allowFolders: true) { urls in
+                    activeSheet = nil
                     guard let url = urls.first else { return }
                     handleImport { try await ModelImporter.importFolder(from: url,
                                                                         manifest: ModelDownloadManager.loadManifest()) }
@@ -68,6 +69,7 @@ struct RootView: View {
                 .ignoresSafeArea()
             case .importZip:
                 DocumentPicker(allowFolders: false) { urls in
+                    activeSheet = nil
                     guard let url = urls.first else { return }
                     handleImport { try await ModelImporter.importZip(from: url) }
                 }
