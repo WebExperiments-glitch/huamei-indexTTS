@@ -29,7 +29,7 @@ final class InferenceEngine: ObservableObject {
         case failed(String)
     }
 
-    private(set) @Published var state: State = .uninitialized
+    @Published private(set) var state: State = .uninitialized
     private var pipeline: TTSPipeline?
 
     /// 傻瓜式模型下载器（缺模型 → 一键下载 → 自动就绪）

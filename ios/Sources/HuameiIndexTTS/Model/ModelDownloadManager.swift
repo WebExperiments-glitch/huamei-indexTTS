@@ -31,7 +31,7 @@ final class ModelDownloadManager: ObservableObject {
         case failed(String)
     }
 
-    private(set) @Published var state: State = .idle
+    @Published private(set) var state: State = .idle
     private var manifest: ModelManifest?
     private var totalBytes: Int64 = 0
     private var doneBytes: Int64 = 0

@@ -53,5 +53,7 @@ struct RootView: View {
     }
 }
 
-.environmentObject(SessionStore())
+#Preview {
+    RootView()
+        .environmentObject(SessionStore())
 }
