@@ -1,26 +1,27 @@
 # Huamei IndexTTS · iOS
 
-原生端侧（on-device）语音克隆 App：iOS 上纯本地跑通 IndexTTS-2.5 的全链路 TTS 与"任意音频即时声纹克隆"（A2）。
+原生端侧（on-device）语音克隆 App：iOS 上纯本地跑通 IndexTTS-2.5 的合成与"任意音频即时声纹克隆"（A2）。
 
-- 内核：自研 MLX Swift 推理（量化 GPT / 语义编解码 / s2mel 扩散 / BigVGAN 声码），p0 Python 数值孪生逐模块对拍
-- 克隆：0 到 1 自研 w2v-bert Conformer + CAM++ DTDNN + Seamless 特征化（无第三方实现参照）
+- 内核：自研 MLX Swift 推理（量化 GPT / 语义编解码 / s2mel 扩散 / BigVGAN 声码）
+- 克隆：0 到 1 自研 w2v-bert Conformer + CAM++ 语音嵌入 + Seamless 特征化
+- 模型分发：App 内一键从魔搭下载（进度 / sha256 校验 / 断点重试），零手工配置
 - UI：SwiftUI · Liquid Glass · 白+橙
-- 构建：SwiftPM 单包，Windows 写码 + GitHub Actions（xtool builder，Xcode 26）云编译 → zsign/爱思重签侧载
+- 构建：SwiftPM 单包 + XcodeGen；GitHub Actions（Xcode 26）云编译出免签名 IPA，重签侧载
 
 ## 目录
 
 | 路径 | 内容 |
 |---|---|
-| [ios/](ios/README.md) | iOS 工程（**入口文档**：架构 / 内存 / 模型资源 / A2 状态 / first-compile 清单） |
+| [ios/](ios/README.md) | iOS 工程（架构 / 内存 / 模型 / A2 状态 / first-compile 清单） |
 | [ios/Sources/MLXIndexTTS2Core/](ios/Sources/MLXIndexTTS2Core) | 推理内核（GPT / Codec / s2mel / BigVGAN / Voice 克隆链） |
-| [scripts/](scripts/) | 模型转换与特征配方黑盒标定工具（w2vbert_export / probe / golden） |
-| [p0/](p0/)（本地） | Python 数值孪生 + golden（不进仓库，见 .gitignore） |
-| [models/](models/)（本地） | MLX 权重 + 克隆组件（按 README 单独下载，不进仓库） |
+| [ios/Sources/HuameiIndexTTS/](ios/Sources/HuameiIndexTTS) | SwiftUI App（下载 / 合成 / 克隆 UI） |
 
-## 模型组件（按需下载，见 ios/README）
+## 模型
 
-- 合成四件套：`vanch007/mlx-indextts2-2.5-8bit`（gpt/codec/s2mel/bigvgan safetensors + tiktoken）
-- 克隆组件：`facebook/w2v-bert-2.0`（magpod 镜像亦可）+ `iic/speech_campplus_sv_zh-cn_16k-common`（campplus_cn_common.bin）
+App 首次启动自动从魔搭仓库按清单下载并校验（清单随包发布：`ModelManifest.json`）：
+
+- 托管：https://modelscope.cn/models/jfjijiogkijijg/huamei-TTS
+- 合成四件套 gpt/codec/s2mel/bigvgan + 克隆组件 w2v-bert-2.0 / campplus / stats
 
 ## 许可
 

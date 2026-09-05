@@ -1,0 +1,336 @@
+﻿build	Build IPA	﻿2026-09-05T04:57:27.1604700Z ##[group]Run set -e
+build	Build IPA	2026-09-05T04:57:27.1605940Z [36;1mset -e[0m
+build	Build IPA	2026-09-05T04:57:27.1606150Z [36;1m[0m
+build	Build IPA	2026-09-05T04:57:27.1606320Z [36;1m# Navigate to iOS project[0m
+build	Build IPA	2026-09-05T04:57:27.1606580Z [36;1mcd "$IOS_PATH"[0m
+build	Build IPA	2026-09-05T04:57:27.1606770Z [36;1m[0m
+build	Build IPA	2026-09-05T04:57:27.1606950Z [36;1m# Find workspace or project[0m
+build	Build IPA	2026-09-05T04:57:27.1607370Z [36;1m# 本仓库为 SwiftPM + XcodeGen（无 .xcodeproj 入库）：CI 的 find 探测[0m
+build	Build IPA	2026-09-05T04:57:27.1607720Z [36;1m# 在 macOS runner 上行为不可靠，这里直接强制生成并写死工程绝对路径。[0m
+build	Build IPA	2026-09-05T04:57:27.1608130Z [36;1mcommand -v xcodegen >/dev/null 2>&1 || brew install xcodegen[0m
+build	Build IPA	2026-09-05T04:57:27.1608580Z [36;1mecho "Regenerating project with xcodegen (deterministic)..."[0m
+build	Build IPA	2026-09-05T04:57:27.1608920Z [36;1mxcodegen generate[0m
+build	Build IPA	2026-09-05T04:57:27.1609150Z [36;1mWORKSPACE=""[0m
+build	Build IPA	2026-09-05T04:57:27.1609400Z [36;1mPROJECT="$(pwd)/HuameiIndexTTS.xcodeproj"[0m
+build	Build IPA	2026-09-05T04:57:27.1609710Z [36;1mecho "Using project: $PROJECT"[0m
+build	Build IPA	2026-09-05T04:57:27.1609940Z [36;1m[0m
+build	Build IPA	2026-09-05T04:57:27.1610350Z [36;1m# Install pods if Podfile exists (always run to ensure sync with Podfile.lock)[0m
+build	Build IPA	2026-09-05T04:57:27.1610750Z [36;1mif [ -f "Podfile" ]; then[0m
+build	Build IPA	2026-09-05T04:57:27.1611000Z [36;1m  echo "Running pod install..."[0m
+build	Build IPA	2026-09-05T04:57:27.1611280Z [36;1m  pod install[0m
+build	Build IPA	2026-09-05T04:57:27.1611600Z [36;1m  WORKSPACE=$(find . -maxdepth 1 -name "*.xcworkspace" | head -1)[0m
+build	Build IPA	2026-09-05T04:57:27.1611970Z [36;1mfi[0m
+build	Build IPA	2026-09-05T04:57:27.1612160Z [36;1m[0m
+build	Build IPA	2026-09-05T04:57:27.1612400Z [36;1m# Determine scheme (only needed for native projects)[0m
+build	Build IPA	2026-09-05T04:57:27.1612810Z [36;1mif [ -z "$SCHEME" ] && [ "$PROJECT_TYPE" = "native" ]; then[0m
+build	Build IPA	2026-09-05T04:57:27.1613160Z [36;1m  if [ -n "$WORKSPACE" ]; then[0m
+build	Build IPA	2026-09-05T04:57:27.1613410Z [36;1m    TARGET_FLAG=-workspace[0m
+build	Build IPA	2026-09-05T04:57:27.1613710Z [36;1m    TARGET_PATH=$WORKSPACE[0m
+build	Build IPA	2026-09-05T04:57:27.1614010Z [36;1m    BASE=$(basename "$WORKSPACE" .xcworkspace)[0m
+build	Build IPA	2026-09-05T04:57:27.1614270Z [36;1m  else[0m
+build	Build IPA	2026-09-05T04:57:27.1614470Z [36;1m    TARGET_FLAG=-project[0m
+build	Build IPA	2026-09-05T04:57:27.1614720Z [36;1m    TARGET_PATH=$PROJECT[0m
+build	Build IPA	2026-09-05T04:57:27.1615010Z [36;1m    BASE=$(basename "$PROJECT" .xcodeproj)[0m
+build	Build IPA	2026-09-05T04:57:27.1615390Z [36;1m  fi[0m
+build	Build IPA	2026-09-05T04:57:27.1615660Z [36;1m[0m
+build	Build IPA	2026-09-05T04:57:27.1616140Z [36;1m  SCHEMES=$(xcodebuild "$TARGET_FLAG" "$TARGET_PATH" -list -json 2>/dev/null | jq -r '(.workspace // .project).schemes[]?' || true)[0m
+build	Build IPA	2026-09-05T04:57:27.1617020Z [36;1m  if [ -z "$SCHEMES" ]; then[0m
+build	Build IPA	2026-09-05T04:57:27.1617670Z [36;1m    SCHEMES=$(xcodebuild "$TARGET_FLAG" "$TARGET_PATH" -list 2>/dev/null | sed -n '/Schemes:/,$p' | tail -n +2 | sed 's/^[[:space:]]*//' | sed '/^$/d' || true)[0m
+build	Build IPA	2026-09-05T04:57:27.1618280Z [36;1m  fi[0m
+build	Build IPA	2026-09-05T04:57:27.1618480Z [36;1m  echo "Schemes:"[0m
+build	Build IPA	2026-09-05T04:57:27.1618750Z [36;1m  printf '%s\n' "$SCHEMES" | sed 's/^/  /'[0m
+build	Build IPA	2026-09-05T04:57:27.1619030Z [36;1m[0m
+build	Build IPA	2026-09-05T04:57:27.1619290Z [36;1m  # In a workspace, the scheme list also holds package and pod[0m
+build	Build IPA	2026-09-05T04:57:27.1619780Z [36;1m  # schemes, and they sort ahead of the app as often as not. The[0m
+build	Build IPA	2026-09-05T04:57:27.1620300Z [36;1m  # scheme named after the project is the app in nearly every repo.[0m
+build	Build IPA	2026-09-05T04:57:27.1620890Z [36;1m  SCHEME=$(printf '%s\n' "$SCHEMES" | grep -Fx "$BASE" | head -1 || true)[0m
+build	Build IPA	2026-09-05T04:57:27.1621290Z [36;1m  if [ -z "$SCHEME" ]; then[0m
+build	Build IPA	2026-09-05T04:57:27.1621770Z [36;1m    SCHEME=$(printf '%s\n' "$SCHEMES" | grep -v '^Pods-' | while IFS= read -r s; do[0m
+build	Build IPA	2026-09-05T04:57:27.1622230Z [36;1m      [ -n "$s" ] || continue[0m
+build	Build IPA	2026-09-05T04:57:27.1622640Z [36;1m      # A scheme that belongs to a local Swift package is not the app.[0m
+build	Build IPA	2026-09-05T04:57:27.1623140Z [36;1m      [ -z "$(find . -maxdepth 4 -path "*/$s/Package.swift" -print -quit)" ] || continue[0m
+build	Build IPA	2026-09-05T04:57:27.1623540Z [36;1m      printf '%s\n' "$s"[0m
+build	Build IPA	2026-09-05T04:57:27.1623790Z [36;1m      break[0m
+build	Build IPA	2026-09-05T04:57:27.1624390Z [36;1m    done)[0m
+build	Build IPA	2026-09-05T04:57:27.1624610Z [36;1m  fi[0m
+build	Build IPA	2026-09-05T04:57:27.1624940Z [36;1m  echo "Building with scheme: $SCHEME (configuration: $CONFIGURATION)"[0m
+build	Build IPA	2026-09-05T04:57:27.1625300Z [36;1mfi[0m
+build	Build IPA	2026-09-05T04:57:27.1625480Z [36;1m[0m
+build	Build IPA	2026-09-05T04:57:27.1625690Z [36;1mif [ "$PROJECT_TYPE" = "native" ]; then[0m
+build	Build IPA	2026-09-05T04:57:27.1626090Z [36;1m  if [ -z "$WORKSPACE" ] && [ -z "$PROJECT" ]; then[0m
+build	Build IPA	2026-09-05T04:57:27.1626760Z [36;1m    echo "::error::No .xcworkspace or .xcodeproj found in '$IOS_PATH'. If the project is generated (XcodeGen/Tuist), commit it or add a generation step."[0m
+build	Build IPA	2026-09-05T04:57:27.1627360Z [36;1m    exit 1[0m
+build	Build IPA	2026-09-05T04:57:27.1627580Z [36;1m  fi[0m
+build	Build IPA	2026-09-05T04:57:27.1627780Z [36;1m  if [ -z "$SCHEME" ]; then[0m
+build	Build IPA	2026-09-05T04:57:27.1628330Z [36;1m    echo "::error::Could not determine a scheme. Pass one via the 'scheme' input, or make sure the project has a shared scheme."[0m
+build	Build IPA	2026-09-05T04:57:27.1628880Z [36;1m    exit 1[0m
+build	Build IPA	2026-09-05T04:57:27.1629140Z [36;1m  fi[0m
+build	Build IPA	2026-09-05T04:57:27.1629310Z [36;1mfi[0m
+build	Build IPA	2026-09-05T04:57:27.1629490Z [36;1m[0m
+build	Build IPA	2026-09-05T04:57:27.1629720Z [36;1m# Use custom DerivedData path for caching[0m
+build	Build IPA	2026-09-05T04:57:27.1630110Z [36;1mDERIVED_DATA_PATH="${GITHUB_WORKSPACE}/DerivedData"[0m
+build	Build IPA	2026-09-05T04:57:27.1630420Z [36;1m[0m
+build	Build IPA	2026-09-05T04:57:27.1630640Z [36;1mif [ "$PROJECT_TYPE" = "flutter" ]; then[0m
+build	Build IPA	2026-09-05T04:57:27.1630960Z [36;1m  cd "$GITHUB_WORKSPACE"[0m
+build	Build IPA	2026-09-05T04:57:27.1631240Z [36;1m  if [ "$CONFIGURATION" = "Debug" ]; then[0m
+build	Build IPA	2026-09-05T04:57:27.1631560Z [36;1m    echo "Building Flutter iOS Debug..."[0m
+build	Build IPA	2026-09-05T04:57:27.1631890Z [36;1m    flutter build ios --debug --no-codesign[0m
+build	Build IPA	2026-09-05T04:57:27.1632170Z [36;1m  else[0m
+build	Build IPA	2026-09-05T04:57:27.1632430Z [36;1m    echo "Building Flutter iOS Release..."[0m
+build	Build IPA	2026-09-05T04:57:27.1632770Z [36;1m    flutter build ios --release --no-codesign[0m
+build	Build IPA	2026-09-05T04:57:27.1633040Z [36;1m  fi[0m
+build	Build IPA	2026-09-05T04:57:27.1633240Z [36;1m  cd "$IOS_PATH"[0m
+build	Build IPA	2026-09-05T04:57:27.1633470Z [36;1m[0m
+build	Build IPA	2026-09-05T04:57:27.1633760Z [36;1m  if [ "$USE_SIGNING" = "true" ]; then[0m
+build	Build IPA	2026-09-05T04:57:27.1634170Z [36;1m    # 'flutter build ios' never signs, so archive the Runner project it[0m
+build	Build IPA	2026-09-05T04:57:27.1634640Z [36;1m    # generated. The IPA step below exports build/App.xcarchive[0m
+build	Build IPA	2026-09-05T04:57:27.1635240Z [36;1m    # whenever signing is on.[0m
+build	Build IPA	2026-09-05T04:57:27.1635510Z [36;1m    ARCHIVE_CMD="xcodebuild"[0m
+build	Build IPA	2026-09-05T04:57:27.1635790Z [36;1m    if [ -n "$WORKSPACE" ]; then[0m
+build	Build IPA	2026-09-05T04:57:27.1636100Z [36;1m      ARCHIVE_CMD="$ARCHIVE_CMD -workspace '$WORKSPACE'"[0m
+build	Build IPA	2026-09-05T04:57:27.1645680Z [36;1m    elif [ -n "$PROJECT" ]; then[0m
+build	Build IPA	2026-09-05T04:57:27.1645990Z [36;1m      ARCHIVE_CMD="$ARCHIVE_CMD -project '$PROJECT'"[0m
+build	Build IPA	2026-09-05T04:57:27.1646240Z [36;1m    else[0m
+build	Build IPA	2026-09-05T04:57:27.1646560Z [36;1m      echo "::error::Signing requested but no Runner workspace/project found in '$IOS_PATH'."[0m
+build	Build IPA	2026-09-05T04:57:27.1646970Z [36;1m      exit 1[0m
+build	Build IPA	2026-09-05T04:57:27.1647140Z [36;1m    fi[0m
+build	Build IPA	2026-09-05T04:57:27.1647290Z [36;1m[0m
+build	Build IPA	2026-09-05T04:57:27.1647500Z [36;1m    ARCHIVE_CMD="$ARCHIVE_CMD -scheme '${SCHEME:-Runner}'"[0m
+build	Build IPA	2026-09-05T04:57:27.1647920Z [36;1m    ARCHIVE_CMD="$ARCHIVE_CMD -configuration '$CONFIGURATION'"[0m
+build	Build IPA	2026-09-05T04:57:27.1648320Z [36;1m    ARCHIVE_CMD="$ARCHIVE_CMD -destination 'generic/platform=iOS'"[0m
+build	Build IPA	2026-09-05T04:57:27.1648710Z [36;1m    ARCHIVE_CMD="$ARCHIVE_CMD -derivedDataPath '$DERIVED_DATA_PATH'"[0m
+build	Build IPA	2026-09-05T04:57:27.1649110Z [36;1m    ARCHIVE_CMD="$ARCHIVE_CMD COMPILER_INDEX_STORE_ENABLE=NO"[0m
+build	Build IPA	2026-09-05T04:57:27.1649510Z [36;1m    ARCHIVE_CMD="$ARCHIVE_CMD DEVELOPMENT_TEAM='$DEVELOPMENT_TEAM'"[0m
+build	Build IPA	2026-09-05T04:57:27.1649890Z [36;1m    ARCHIVE_CMD="$ARCHIVE_CMD CODE_SIGN_STYLE=Manual"[0m
+build	Build IPA	2026-09-05T04:57:27.1650350Z [36;1m    ARCHIVE_CMD="$ARCHIVE_CMD PROVISIONING_PROFILE_SPECIFIER='$PROVISIONING_PROFILE_NAME'"[0m
+build	Build IPA	2026-09-05T04:57:27.1650760Z [36;1m    ARCHIVE_CMD="$ARCHIVE_CMD -quiet"[0m
+build	Build IPA	2026-09-05T04:57:27.1651390Z [36;1m    ARCHIVE_CMD="$ARCHIVE_CMD -archivePath '$GITHUB_WORKSPACE/build/App.xcarchive' archive"[0m
+build	Build IPA	2026-09-05T04:57:27.1651780Z [36;1m[0m
+build	Build IPA	2026-09-05T04:57:27.1651940Z [36;1m    echo "Running: $ARCHIVE_CMD"[0m
+build	Build IPA	2026-09-05T04:57:27.1652190Z [36;1m    eval $ARCHIVE_CMD[0m
+build	Build IPA	2026-09-05T04:57:27.1652390Z [36;1m  fi[0m
+build	Build IPA	2026-09-05T04:57:27.1652720Z [36;1melif [ "$PROJECT_TYPE" = "reactnative" ] || [ "$PROJECT_TYPE" = "expo" ] || [ "$PROJECT_TYPE" = "kmp" ]; then[0m
+build	Build IPA	2026-09-05T04:57:27.1653240Z [36;1m  # Use xcodebuild directly for React Native/Expo and Kotlin Multiplatform.[0m
+build	Build IPA	2026-09-05T04:57:27.1653680Z [36;1m  # For KMP, the Xcode build phase (or CocoaPods) invokes Gradle to[0m
+build	Build IPA	2026-09-05T04:57:27.1654150Z [36;1m  # compile the shared Kotlin framework, so the JDK must be on PATH.[0m
+build	Build IPA	2026-09-05T04:57:27.1654520Z [36;1m  if [ "$PROJECT_TYPE" = "kmp" ]; then[0m
+build	Build IPA	2026-09-05T04:57:27.1654880Z [36;1m    echo "Building Kotlin Multiplatform iOS ($CONFIGURATION)..."[0m
+build	Build IPA	2026-09-05T04:57:27.1655240Z [36;1m    if [ -f "${GITHUB_WORKSPACE}/gradlew" ]; then[0m
+build	Build IPA	2026-09-05T04:57:27.1655550Z [36;1m      chmod +x "${GITHUB_WORKSPACE}/gradlew"[0m
+build	Build IPA	2026-09-05T04:57:27.1655780Z [36;1m    fi[0m
+build	Build IPA	2026-09-05T04:57:27.1655920Z [36;1m  else[0m
+build	Build IPA	2026-09-05T04:57:27.1656160Z [36;1m    echo "Building React Native iOS ($CONFIGURATION)..."[0m
+build	Build IPA	2026-09-05T04:57:27.1656470Z [36;1m  fi[0m
+build	Build IPA	2026-09-05T04:57:27.1656670Z [36;1m  BUILD_CMD="xcodebuild"[0m
+build	Build IPA	2026-09-05T04:57:27.1656920Z [36;1m  if [ -n "$WORKSPACE" ]; then[0m
+build	Build IPA	2026-09-05T04:57:27.1657210Z [36;1m    BUILD_CMD="$BUILD_CMD -workspace $WORKSPACE"[0m
+build	Build IPA	2026-09-05T04:57:27.1657490Z [36;1m  elif [ -n "$PROJECT" ]; then[0m
+build	Build IPA	2026-09-05T04:57:27.1657780Z [36;1m    BUILD_CMD="$BUILD_CMD -project $PROJECT"[0m
+build	Build IPA	2026-09-05T04:57:27.1658120Z [36;1m  fi[0m
+build	Build IPA	2026-09-05T04:57:27.1658310Z [36;1m[0m
+build	Build IPA	2026-09-05T04:57:27.1658640Z [36;1m  # Auto-detect scheme from workspace/project name (e.g., MyApp.xcworkspace -> MyApp)[0m
+build	Build IPA	2026-09-05T04:57:27.1659040Z [36;1m  # unless an explicit scheme was provided.[0m
+build	Build IPA	2026-09-05T04:57:27.1659300Z [36;1m  if [ -z "$SCHEME" ]; then[0m
+build	Build IPA	2026-09-05T04:57:27.1659530Z [36;1m    if [ -n "$WORKSPACE" ]; then[0m
+build	Build IPA	2026-09-05T04:57:27.1659810Z [36;1m      SCHEME=$(basename "$WORKSPACE" .xcworkspace)[0m
+build	Build IPA	2026-09-05T04:57:27.1660280Z [36;1m    elif [ -n "$PROJECT" ]; then[0m
+build	Build IPA	2026-09-05T04:57:27.1660590Z [36;1m      SCHEME=$(basename "$PROJECT" .xcodeproj)[0m
+build	Build IPA	2026-09-05T04:57:27.1660860Z [36;1m    fi[0m
+build	Build IPA	2026-09-05T04:57:27.1661010Z [36;1m  fi[0m
+build	Build IPA	2026-09-05T04:57:27.1661160Z [36;1m[0m
+build	Build IPA	2026-09-05T04:57:27.1661350Z [36;1m  BUILD_CMD="$BUILD_CMD -scheme '$SCHEME'"[0m
+build	Build IPA	2026-09-05T04:57:27.1661680Z [36;1m  BUILD_CMD="$BUILD_CMD -configuration '$CONFIGURATION'"[0m
+build	Build IPA	2026-09-05T04:57:27.1662080Z [36;1m  BUILD_CMD="$BUILD_CMD -destination 'generic/platform=iOS'"[0m
+build	Build IPA	2026-09-05T04:57:27.1662440Z [36;1m  BUILD_CMD="$BUILD_CMD -derivedDataPath '$DERIVED_DATA_PATH'"[0m
+build	Build IPA	2026-09-05T04:57:27.1662800Z [36;1m  BUILD_CMD="$BUILD_CMD COMPILER_INDEX_STORE_ENABLE=NO"[0m
+build	Build IPA	2026-09-05T04:57:27.1663120Z [36;1m  BUILD_CMD="$BUILD_CMD -quiet"[0m
+build	Build IPA	2026-09-05T04:57:27.1663350Z [36;1m[0m
+build	Build IPA	2026-09-05T04:57:27.1663530Z [36;1m  if [ "$USE_SIGNING" = "true" ]; then[0m
+build	Build IPA	2026-09-05T04:57:27.1663820Z [36;1m    # Must archive, not build: the IPA step below exports[0m
+build	Build IPA	2026-09-05T04:57:27.1664210Z [36;1m    # build/App.xcarchive whenever signing is on.[0m
+build	Build IPA	2026-09-05T04:57:27.1664610Z [36;1m    BUILD_CMD="$BUILD_CMD DEVELOPMENT_TEAM='$DEVELOPMENT_TEAM'"[0m
+build	Build IPA	2026-09-05T04:57:27.1665020Z [36;1m    BUILD_CMD="$BUILD_CMD CODE_SIGN_STYLE=Manual"[0m
+build	Build IPA	2026-09-05T04:57:27.1665430Z [36;1m    BUILD_CMD="$BUILD_CMD PROVISIONING_PROFILE_SPECIFIER='$PROVISIONING_PROFILE_NAME'"[0m
+build	Build IPA	2026-09-05T04:57:27.1665930Z [36;1m    BUILD_CMD="$BUILD_CMD -archivePath '$GITHUB_WORKSPACE/build/App.xcarchive' archive"[0m
+build	Build IPA	2026-09-05T04:57:27.1666270Z [36;1m  else[0m
+build	Build IPA	2026-09-05T04:57:27.1666490Z [36;1m    BUILD_CMD="$BUILD_CMD CODE_SIGNING_ALLOWED=NO build"[0m
+build	Build IPA	2026-09-05T04:57:27.1666870Z [36;1m  fi[0m
+build	Build IPA	2026-09-05T04:57:27.1667030Z [36;1m[0m
+build	Build IPA	2026-09-05T04:57:27.1667190Z [36;1m  echo "Running: $BUILD_CMD"[0m
+build	Build IPA	2026-09-05T04:57:27.1667410Z [36;1m  eval $BUILD_CMD[0m
+build	Build IPA	2026-09-05T04:57:27.1667590Z [36;1melse[0m
+build	Build IPA	2026-09-05T04:57:27.1667760Z [36;1m  BUILD_CMD="xcodebuild"[0m
+build	Build IPA	2026-09-05T04:57:27.1667960Z [36;1m  if [ -n "$WORKSPACE" ]; then[0m
+build	Build IPA	2026-09-05T04:57:27.1668210Z [36;1m    BUILD_CMD="$BUILD_CMD -workspace $WORKSPACE"[0m
+build	Build IPA	2026-09-05T04:57:27.1668470Z [36;1m  elif [ -n "$PROJECT" ]; then[0m
+build	Build IPA	2026-09-05T04:57:27.1668720Z [36;1m    BUILD_CMD="$BUILD_CMD -project $PROJECT"[0m
+build	Build IPA	2026-09-05T04:57:27.1668950Z [36;1m  fi[0m
+build	Build IPA	2026-09-05T04:57:27.1669090Z [36;1m[0m
+build	Build IPA	2026-09-05T04:57:27.1669260Z [36;1m  BUILD_CMD="$BUILD_CMD -scheme '$SCHEME'"[0m
+build	Build IPA	2026-09-05T04:57:27.1669570Z [36;1m  BUILD_CMD="$BUILD_CMD -configuration '$CONFIGURATION'"[0m
+build	Build IPA	2026-09-05T04:57:27.1669920Z [36;1m  BUILD_CMD="$BUILD_CMD -destination 'generic/platform=iOS'"[0m
+build	Build IPA	2026-09-05T04:57:27.1670290Z [36;1m  BUILD_CMD="$BUILD_CMD -derivedDataPath '$DERIVED_DATA_PATH'"[0m
+build	Build IPA	2026-09-05T04:57:27.1670570Z [36;1m[0m
+build	Build IPA	2026-09-05T04:57:27.1670730Z [36;1m  # Speed optimization flags[0m
+build	Build IPA	2026-09-05T04:57:27.1671000Z [36;1m  BUILD_CMD="$BUILD_CMD COMPILER_INDEX_STORE_ENABLE=NO"[0m
+build	Build IPA	2026-09-05T04:57:27.1671330Z [36;1m  BUILD_CMD="$BUILD_CMD DEBUG_INFORMATION_FORMAT=dwarf"[0m
+build	Build IPA	2026-09-05T04:57:27.1671660Z [36;1m  BUILD_CMD="$BUILD_CMD ONLY_ACTIVE_ARCH=YES"[0m
+build	Build IPA	2026-09-05T04:57:27.1671920Z [36;1m  BUILD_CMD="$BUILD_CMD -quiet"[0m
+build	Build IPA	2026-09-05T04:57:27.1672110Z [36;1m[0m
+build	Build IPA	2026-09-05T04:57:27.1672300Z [36;1m  # mlx-swift 自带 CudaBuild 构建插件在 iOS 交叉编译下无法通过验证 →[0m
+build	Build IPA	2026-09-05T04:57:27.1672580Z [36;1m  # 跳过包插件校验（不影响产物，规避 "Validate plug-in ... failed"）[0m
+build	Build IPA	2026-09-05T04:57:27.1672890Z [36;1m  BUILD_CMD="$BUILD_CMD -skipPackagePluginValidation"[0m
+build	Build IPA	2026-09-05T04:57:27.1673140Z [36;1m[0m
+build	Build IPA	2026-09-05T04:57:27.1673310Z [36;1m  # Xcode 16+ native compilation caching[0m
+build	Build IPA	2026-09-05T04:57:27.1673620Z [36;1m  BUILD_CMD="$BUILD_CMD SWIFT_ENABLE_COMPILE_CACHE=YES"[0m
+build	Build IPA	2026-09-05T04:57:27.1673940Z [36;1m  BUILD_CMD="$BUILD_CMD CLANG_ENABLE_COMPILE_CACHE=YES"[0m
+build	Build IPA	2026-09-05T04:57:27.1674190Z [36;1m[0m
+build	Build IPA	2026-09-05T04:57:27.1674370Z [36;1m  if [ "$USE_SIGNING" = "true" ]; then[0m
+build	Build IPA	2026-09-05T04:57:27.1674710Z [36;1m    # For signed builds, use archive. Automatic signing cannot resolve a[0m
+build	Build IPA	2026-09-05T04:57:27.1675350Z [36;1m    # team on a runner (no Xcode account), so sign manually against the[0m
+build	Build IPA	2026-09-05T04:57:27.1675710Z [36;1m    # profile installed above.[0m
+build	Build IPA	2026-09-05T04:57:27.1676000Z [36;1m    BUILD_CMD="$BUILD_CMD DEVELOPMENT_TEAM='$DEVELOPMENT_TEAM'"[0m
+build	Build IPA	2026-09-05T04:57:27.1676330Z [36;1m    BUILD_CMD="$BUILD_CMD CODE_SIGN_STYLE=Manual"[0m
+build	Build IPA	2026-09-05T04:57:27.1676740Z [36;1m    BUILD_CMD="$BUILD_CMD PROVISIONING_PROFILE_SPECIFIER='$PROVISIONING_PROFILE_NAME'"[0m
+build	Build IPA	2026-09-05T04:57:27.1677260Z [36;1m    BUILD_CMD="$BUILD_CMD -archivePath '$GITHUB_WORKSPACE/build/App.xcarchive' archive"[0m
+build	Build IPA	2026-09-05T04:57:27.1677600Z [36;1m  else[0m
+build	Build IPA	2026-09-05T04:57:27.1677800Z [36;1m    # For unsigned builds, use faster 'build' action[0m
+build	Build IPA	2026-09-05T04:57:27.1678150Z [36;1m    BUILD_CMD="$BUILD_CMD CODE_SIGNING_ALLOWED=NO build"[0m
+build	Build IPA	2026-09-05T04:57:27.1678420Z [36;1m  fi[0m
+build	Build IPA	2026-09-05T04:57:27.1678560Z [36;1m[0m
+build	Build IPA	2026-09-05T04:57:27.1678700Z [36;1m  echo "Running: $BUILD_CMD"[0m
+build	Build IPA	2026-09-05T04:57:27.1678990Z [36;1m  eval $BUILD_CMD[0m
+build	Build IPA	2026-09-05T04:57:27.1679190Z [36;1mfi[0m
+build	Build IPA	2026-09-05T04:57:27.1679350Z [36;1m[0m
+build	Build IPA	2026-09-05T04:57:27.1679480Z [36;1m# Create IPA[0m
+build	Build IPA	2026-09-05T04:57:27.1679650Z [36;1mif [ "$USE_SIGNING" = "true" ]; then[0m
+build	Build IPA	2026-09-05T04:57:27.1679940Z [36;1m  # For signed builds, use xcodebuild -exportArchive.[0m
+build	Build IPA	2026-09-05T04:57:27.1680290Z [36;1m  # Everything below is relative to the repo root, which is also what[0m
+build	Build IPA	2026-09-05T04:57:27.1680690Z [36;1m  # the upload-artifact step ("build/*.ipa") resolves against — do not[0m
+build	Build IPA	2026-09-05T04:57:27.1681240Z [36;1m  # use "cd .." here, it breaks when ios_path is "." (native at root).[0m
+build	Build IPA	2026-09-05T04:57:27.1681600Z [36;1m  cd "$GITHUB_WORKSPACE"[0m
+build	Build IPA	2026-09-05T04:57:27.1681810Z [36;1m[0m
+build	Build IPA	2026-09-05T04:57:27.1682080Z [36;1m  # The export has to use the same manual signing as the archive, and[0m
+build	Build IPA	2026-09-05T04:57:27.1682440Z [36;1m  # it needs the app's real bundle id to map it to the profile.[0m
+build	Build IPA	2026-09-05T04:57:27.1682980Z [36;1m  APP_BUNDLE_ID=$(plutil -extract ApplicationProperties.CFBundleIdentifier raw -o - build/App.xcarchive/Info.plist)[0m
+build	Build IPA	2026-09-05T04:57:27.1683630Z [36;1m  echo "Exporting $APP_BUNDLE_ID with profile '$PROVISIONING_PROFILE_NAME' (team $DEVELOPMENT_TEAM)"[0m
+build	Build IPA	2026-09-05T04:57:27.1684020Z [36;1m[0m
+build	Build IPA	2026-09-05T04:57:27.1684160Z [36;1m  printf '%s\n' \[0m
+build	Build IPA	2026-09-05T04:57:27.1684370Z [36;1m    '<?xml version="1.0" encoding="UTF-8"?>' \[0m
+build	Build IPA	2026-09-05T04:57:27.1684950Z [36;1m    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \[0m
+build	Build IPA	2026-09-05T04:57:27.1685420Z [36;1m    '<plist version="1.0">' \[0m
+build	Build IPA	2026-09-05T04:57:27.1685620Z [36;1m    '<dict>' \[0m
+build	Build IPA	2026-09-05T04:57:27.1685810Z [36;1m    '    <key>method</key>' \[0m
+build	Build IPA	2026-09-05T04:57:27.1686050Z [36;1m    '    <string>development</string>' \[0m
+build	Build IPA	2026-09-05T04:57:27.1686320Z [36;1m    '    <key>signingStyle</key>' \[0m
+build	Build IPA	2026-09-05T04:57:27.1686560Z [36;1m    '    <string>manual</string>' \[0m
+build	Build IPA	2026-09-05T04:57:27.1686780Z [36;1m    '    <key>teamID</key>' \[0m
+build	Build IPA	2026-09-05T04:57:27.1687050Z [36;1m    "    <string>${DEVELOPMENT_TEAM}</string>" \[0m
+build	Build IPA	2026-09-05T04:57:27.1687380Z [36;1m    '    <key>provisioningProfiles</key>' \[0m
+build	Build IPA	2026-09-05T04:57:27.1687620Z [36;1m    '    <dict>' \[0m
+build	Build IPA	2026-09-05T04:57:27.1687840Z [36;1m    "        <key>${APP_BUNDLE_ID}</key>" \[0m
+build	Build IPA	2026-09-05T04:57:27.1688120Z [36;1m    "        <string>${PROVISIONING_PROFILE_NAME}</string>" \[0m
+build	Build IPA	2026-09-05T04:57:27.1688390Z [36;1m    '    </dict>' \[0m
+build	Build IPA	2026-09-05T04:57:27.1688570Z [36;1m    '</dict>' \[0m
+build	Build IPA	2026-09-05T04:57:27.1688770Z [36;1m    '</plist>' > ExportOptions.plist[0m
+build	Build IPA	2026-09-05T04:57:27.1689020Z [36;1m  xcodebuild -exportArchive \[0m
+build	Build IPA	2026-09-05T04:57:27.1689280Z [36;1m    -archivePath build/App.xcarchive \[0m
+build	Build IPA	2026-09-05T04:57:27.1689600Z [36;1m    -exportOptionsPlist ExportOptions.plist \[0m
+build	Build IPA	2026-09-05T04:57:27.1690190Z [36;1m    -exportPath build/export[0m
+build	Build IPA	2026-09-05T04:57:27.1690400Z [36;1m[0m
+build	Build IPA	2026-09-05T04:57:27.1690580Z [36;1m  # Move IPA to expected location[0m
+build	Build IPA	2026-09-05T04:57:27.1690870Z [36;1m  mv build/export/*.ipa "build/$BUILD_ID.ipa"[0m
+build	Build IPA	2026-09-05T04:57:27.1691220Z [36;1m  echo "Created signed IPA: build/$BUILD_ID.ipa"[0m
+build	Build IPA	2026-09-05T04:57:27.1691480Z [36;1melse[0m
+build	Build IPA	2026-09-05T04:57:27.1691690Z [36;1m  # For unsigned builds, find .app and create IPA[0m
+build	Build IPA	2026-09-05T04:57:27.1691980Z [36;1m  if [ "$PROJECT_TYPE" = "flutter" ]; then[0m
+build	Build IPA	2026-09-05T04:57:27.1692290Z [36;1m    # Flutter outputs to build/ios/iphoneos/[0m
+build	Build IPA	2026-09-05T04:57:27.1692720Z [36;1m    APP_PATH=$(find "${GITHUB_WORKSPACE}/build/ios/iphoneos" -name "*.app" -type d | head -1)[0m
+build	Build IPA	2026-09-05T04:57:27.1693110Z [36;1m  else[0m
+build	Build IPA	2026-09-05T04:57:27.1693380Z [36;1m    # Native and React Native/Expo use DerivedData. Ask the project[0m
+build	Build IPA	2026-09-05T04:57:27.1693810Z [36;1m    # which bundle this scheme produces: the first .app under[0m
+build	Build IPA	2026-09-05T04:57:27.1694770Z [36;1m    # Build/Products is the wrong one whenever the repo has more than[0m
+build	Build IPA	2026-09-05T04:57:27.1695160Z [36;1m    # one app target.[0m
+build	Build IPA	2026-09-05T04:57:27.1695390Z [36;1m    if [ -n "$WORKSPACE" ]; then[0m
+build	Build IPA	2026-09-05T04:57:27.1695620Z [36;1m      TARGET_FLAG=-workspace[0m
+build	Build IPA	2026-09-05T04:57:27.1695830Z [36;1m      TARGET_PATH=$WORKSPACE[0m
+build	Build IPA	2026-09-05T04:57:27.1696040Z [36;1m    else[0m
+build	Build IPA	2026-09-05T04:57:27.1696220Z [36;1m      TARGET_FLAG=-project[0m
+build	Build IPA	2026-09-05T04:57:27.1696450Z [36;1m      TARGET_PATH=$PROJECT[0m
+build	Build IPA	2026-09-05T04:57:27.1696630Z [36;1m    fi[0m
+build	Build IPA	2026-09-05T04:57:27.1696850Z [36;1m    APP_PATH=$(xcodebuild "$TARGET_FLAG" "$TARGET_PATH" \[0m
+build	Build IPA	2026-09-05T04:57:27.1697450Z [36;1m      -scheme "$SCHEME" \[0m
+build	Build IPA	2026-09-05T04:57:27.1697680Z [36;1m      -configuration "$CONFIGURATION" \[0m
+build	Build IPA	2026-09-05T04:57:27.1697950Z [36;1m      -destination 'generic/platform=iOS' \[0m
+build	Build IPA	2026-09-05T04:57:27.1698230Z [36;1m      -derivedDataPath "$DERIVED_DATA_PATH" \[0m
+build	Build IPA	2026-09-05T04:57:27.1698510Z [36;1m      -showBuildSettings -json 2>/dev/null \[0m
+build	Build IPA	2026-09-05T04:57:27.1698810Z [36;1m      | jq -r 'map(.buildSettings)[0m
+build	Build IPA	2026-09-05T04:57:27.1699190Z [36;1m               | map(select(.PRODUCT_TYPE == "com.apple.product-type.application"[0m
+build	Build IPA	2026-09-05T04:57:27.1699600Z [36;1m                            and (.TARGET_BUILD_DIR | contains("-iphoneos"))))[0m
+build	Build IPA	2026-09-05T04:57:27.1699960Z [36;1m               | map(.TARGET_BUILD_DIR + "/" + .FULL_PRODUCT_NAME)[0m
+build	Build IPA	2026-09-05T04:57:27.1700270Z [36;1m               | first // empty' || true)[0m
+build	Build IPA	2026-09-05T04:57:27.1700520Z [36;1m    if [ ! -d "$APP_PATH" ]; then[0m
+build	Build IPA	2026-09-05T04:57:27.1701070Z [36;1m      APP_PATH=$(find "$DERIVED_DATA_PATH/Build/Products/${CONFIGURATION}-iphoneos" -maxdepth 1 -name "*.app" -type d -print -quit 2>/dev/null || true)[0m
+build	Build IPA	2026-09-05T04:57:27.1702990Z [36;1m    fi[0m
+build	Build IPA	2026-09-05T04:57:27.1703160Z [36;1m  fi[0m
+build	Build IPA	2026-09-05T04:57:27.1703310Z [36;1m[0m
+build	Build IPA	2026-09-05T04:57:27.1703470Z [36;1m  if [ -z "$APP_PATH" ]; then[0m
+build	Build IPA	2026-09-05T04:57:27.1703720Z [36;1m    echo "Error: Could not find .app"[0m
+build	Build IPA	2026-09-05T04:57:27.1703940Z [36;1m    exit 1[0m
+build	Build IPA	2026-09-05T04:57:27.1704100Z [36;1m  fi[0m
+build	Build IPA	2026-09-05T04:57:27.1704260Z [36;1m  echo "Found app at: $APP_PATH"[0m
+build	Build IPA	2026-09-05T04:57:27.1704490Z [36;1m  cd "$GITHUB_WORKSPACE"[0m
+build	Build IPA	2026-09-05T04:57:27.1704710Z [36;1m  mkdir -p build/Payload[0m
+build	Build IPA	2026-09-05T04:57:27.1704920Z [36;1m  cp -R "$APP_PATH" build/Payload/[0m
+build	Build IPA	2026-09-05T04:57:27.1705130Z [36;1m  cd build[0m
+build	Build IPA	2026-09-05T04:57:27.1705310Z [36;1m  zip -rq "$BUILD_ID.ipa" Payload[0m
+build	Build IPA	2026-09-05T04:57:27.1705520Z [36;1m  rm -rf Payload[0m
+build	Build IPA	2026-09-05T04:57:27.1705750Z [36;1m  echo "Created unsigned IPA: build/$BUILD_ID.ipa"[0m
+build	Build IPA	2026-09-05T04:57:27.1705990Z [36;1mfi[0m
+build	Build IPA	2026-09-05T04:57:27.1741420Z shell: /bin/bash -e {0}
+build	Build IPA	2026-09-05T04:57:27.1741640Z env:
+build	Build IPA	2026-09-05T04:57:27.1741830Z   MD_APPLE_SDK_ROOT: /Applications/Xcode_26.6.app
+build	Build IPA	2026-09-05T04:57:27.1742100Z   BUILD_ID: huamei-0905-125610
+build	Build IPA	2026-09-05T04:57:27.1742590Z   IOS_PATH: ios
+build	Build IPA	2026-09-05T04:57:27.1742760Z   SCHEME: HuameiIndexTTS
+build	Build IPA	2026-09-05T04:57:27.1742970Z   PROJECT_TYPE: native
+build	Build IPA	2026-09-05T04:57:27.1743120Z   USE_SIGNING: false
+build	Build IPA	2026-09-05T04:57:27.1743280Z   CONFIGURATION: Debug
+build	Build IPA	2026-09-05T04:57:27.1743430Z ##[endgroup]
+build	Build IPA	2026-09-05T04:57:27.1924260Z Regenerating project with xcodegen (deterministic)...
+build	Build IPA	2026-09-05T04:57:27.2031520Z ⚙️  Generating plists...
+build	Build IPA	2026-09-05T04:57:27.2031810Z ⚙️  Generating project...
+build	Build IPA	2026-09-05T04:57:27.2131670Z ⚙️  Writing project...
+build	Build IPA	2026-09-05T04:57:27.2204790Z Created project at /Users/runner/work/huamei-indexTTS/huamei-indexTTS/ios/HuameiIndexTTS.xcodeproj
+build	Build IPA	2026-09-05T04:57:27.2214680Z Using project: /Users/runner/work/huamei-indexTTS/huamei-indexTTS/ios/HuameiIndexTTS.xcodeproj
+build	Build IPA	2026-09-05T04:57:27.2220680Z Running: xcodebuild -project /Users/runner/work/huamei-indexTTS/huamei-indexTTS/ios/HuameiIndexTTS.xcodeproj -scheme 'HuameiIndexTTS' -configuration 'Debug' -destination 'generic/platform=iOS' -derivedDataPath '/Users/runner/work/huamei-indexTTS/huamei-indexTTS/DerivedData' COMPILER_INDEX_STORE_ENABLE=NO DEBUG_INFORMATION_FORMAT=dwarf ONLY_ACTIVE_ARCH=YES -quiet -skipPackagePluginValidation SWIFT_ENABLE_COMPILE_CACHE=YES CLANG_ENABLE_COMPILE_CACHE=YES CODE_SIGNING_ALLOWED=NO build
+build	Build IPA	2026-09-05T04:57:58.3813820Z In file included from /Users/runner/work/huamei-indexTTS/huamei-indexTTS/DerivedData/SourcePackages/checkouts/mlx-swift/Source/Cmlx/mlx-generated/metal/steel/attn/kernels/steel_attention.metal:6:
+build	Build IPA	2026-09-05T04:57:58.3827260Z In file included from /Users/runner/work/huamei-indexTTS/huamei-indexTTS/DerivedData/SourcePackages/checkouts/mlx-swift/Source/Cmlx/mlx-generated/metal/steel/attn/kernels/../../../steel/attn/kernels/steel_attention.h:3:
+build	Build IPA	2026-09-05T04:57:58.3841200Z In file included from /Users/runner/work/huamei-indexTTS/huamei-indexTTS/DerivedData/SourcePackages/checkouts/mlx-swift/Source/Cmlx/mlx-generated/metal/steel/attn/kernels/../../../steel/attn/attn.h:6:
+build	Build IPA	2026-09-05T04:57:58.3844350Z In file included from /Users/runner/work/huamei-indexTTS/huamei-indexTTS/DerivedData/SourcePackages/checkouts/mlx-swift/Source/Cmlx/mlx-generated/metal/steel/attn/kernels/../../../steel/attn/../../steel/attn/mma.h:11:
+build	Build IPA	2026-09-05T04:57:58.3847110Z /Users/runner/work/huamei-indexTTS/huamei-indexTTS/DerivedData/SourcePackages/checkouts/mlx-swift/Source/Cmlx/mlx-generated/metal/steel/attn/kernels/../../../steel/attn/../../steel/utils/integral_constant.h:108:6: warning: constexpr if is a C++17 extension [-Wc++17-extensions]
+build	Build IPA	2026-09-05T04:57:58.3848290Z   if constexpr (start < stop) {
+build	Build IPA	2026-09-05T04:57:58.3848670Z      ^
+build	Build IPA	2026-09-05T04:57:58.3850720Z In file included from /Users/runner/work/huamei-indexTTS/huamei-indexTTS/DerivedData/SourcePackages/checkouts/mlx-swift/Source/Cmlx/mlx-generated/metal/steel/attn/kernels/steel_attention.metal:6:
+build	Build IPA	2026-09-05T04:57:58.3854440Z /Users/runner/work/huamei-indexTTS/huamei-indexTTS/DerivedData/SourcePackages/checkouts/mlx-swift/Source/Cmlx/mlx-generated/metal/steel/attn/kernels/../../../steel/attn/kernels/steel_attention.h:356:16: warning: constexpr if is a C++17 extension [-Wc++17-extensions]
+build	Build IPA	2026-09-05T04:57:58.3855340Z             if constexpr (is_bool) {
+build	Build IPA	2026-09-05T04:57:58.3855600Z                ^
+build	Build IPA	2026-09-05T04:57:58.3857810Z /Users/runner/work/huamei-indexTTS/huamei-indexTTS/DerivedData/SourcePackages/checkouts/mlx-swift/Source/Cmlx/mlx-generated/metal/steel/attn/kernels/../../../steel/attn/kernels/steel_attention.h:426:14: warning: constexpr if is a C++17 extension [-Wc++17-extensions]
+build	Build IPA	2026-09-05T04:57:58.3859410Z           if constexpr (BD == 128) {
+build	Build IPA	2026-09-05T04:57:58.3859700Z              ^
+build	Build IPA	2026-09-05T04:57:58.3860620Z /Users/runner/work/huamei-indexTTS/huamei-indexTTS/DerivedData/SourcePackages/checkouts/mlx-swift/Source/Cmlx/mlx-generated/metal/steel/attn/kernels/../../../steel/attn/kernels/steel_attention.h:436:14: warning: constexpr if is a C++17 extension [-Wc++17-extensions]
+build	Build IPA	2026-09-05T04:57:58.3862380Z           if constexpr (BD == 128) {
+build	Build IPA	2026-09-05T04:57:58.3869330Z              ^
+build	Build IPA	2026-09-05T04:57:58.3869630Z 4 warnings generated.
+build	Build IPA	2026-09-05T04:58:00.8069330Z Cache miss
+build	Build IPA	2026-09-05T04:58:00.8070400Z Failed frontend command:
+build	Build IPA	2026-09-05T04:58:00.8117790Z /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift-frontend -frontend -c /Users/runner/work/huamei-indexTTS/huamei-indexTTS/ios/Sources/MLXIndexTTS2Core/Voice/AudioFeatures.swift /Users/runner/work/huamei-indexTTS/huamei-indexTTS/ios/Sources/MLXIndexTTS2Core/BigVGAN.swift /Users/runner/work/huamei-indexTTS/huamei-indexTTS/ios/Sources/MLXIndexTTS2Core/Voice/Campplus.swift /Users/runner/work/huamei-indexTTS/huamei-indexTTS/ios/Sources/MLXIndexTTS2Core/Codec.swift /Users/runner/work/huamei-indexTTS/huamei-indexTTS/ios/Sources/MLXIndexTTS2Core/Config.swift /Users/runner/work/huamei-indexTTS/huamei-indexTTS/ios/Sources/MLXIndexTTS2Core/GPT2.swift /Users/runner/work/huamei-indexTTS/huamei-indexTTS/ios/Sources/MLXIndexTTS2Core/GPTGenerator.swift /Users/runner/work/huamei-indexTTS/huamei-indexTTS/ios/Sources/MLXIndexTTS2Core/Ops.swift /Users/runner/work/huamei-indexTTS/huamei-indexTTS/ios/Sources/MLXIndexTTS2Core/OpsCPU.swift /Users/runner/work/huamei-indexTTS/huamei-indexTTS/ios/Sources/MLXIndexTTS2Core/PRNG.swift /Users/runner/work/huamei-indexTTS/huamei-indexTTS/ios/Sources/MLXIndexTTS2Core/S2MelInfer.swift /Users/runner/work/huamei-indexTTS/huamei-indexTTS/ios/Sources/MLXIndexTTS2Core/S2MelWeights.swift -primary-file /Users/runner/work/huamei-indexTTS/huamei-indexTTS/ios/Sources/MLXIndexTTS2Core/IO/Safetensors.swift -primary-file /Users/runner/work/huamei-indexTTS/huamei-indexTTS/ios/Sources/MLXIndexTTS2Core/TTSPipeline.swift -primary-file /Users/runner/work/huamei-indexTTS/huamei-indexTTS/ios/Sources/MLXIndexTTS2Core/Text/TiktokenBPE.swift -primary-file /Users/runner/work/huamei-indexTTS/huamei-indexTTS/ios/Sources/MLXIndexTTS2Core/Voice/VoiceExtractor.swift -primary-file /Users/runner/work/huamei-indexTTS/huamei-indexTTS/ios/Sources/MLXIndexTTS2Core/Voice/Voiceprint.swift -primary-file /Users/runner/work/huamei-indexTTS/huamei-indexTTS/ios/Sources/MLXIndexTTS2Core/Voice/W2VBert.swift -supplementary-output-file-map /Users/runner/work/huamei-indexTTS/huamei-indexTTS/DerivedData/Build/Intermediates.noindex/HuameiIndexTTS.build/Debug-iphoneos/MLXIndexTTS2Core.build/Objects-normal/arm64/supplementaryOutputs-3 -target arm64-apple-ios17.0 -direct-clang-cc1-module-build -Xcc -cc1 -Xcc -fansi-escape-codes -Xcc -ferror-limit -Xcc 19 -Xcc -Wdeprecated-objc-isa-usage -Xcc -Werror\=deprecated-objc-isa-usage -Xcc -Werror\=implicit-function-declaration -Xcc -Wno-elaborated-enum-base -Xcc -Wno-error\=allocator-wrappers -Xcc -disable-free -Xcc -fno-pch-timestamp -Xcc -fsyntax-only -Xcc -x -Xcc objective-c -Xcc \<swift-imported-modules\> -Xcc -target-abi -Xcc darwinpcs -Xcc -target-cpu -Xcc apple-a12 -Xcc -target-feature -Xcc +v8.3a -Xcc -target-feature -Xcc +aes -Xcc -target-feature -Xcc +complxnum -Xcc -target-feature -Xcc +crc -Xcc -target-feature -Xcc +fp-armv8 -Xcc -target-feature -Xcc +fullfp16 -Xcc -target-feature -Xcc +jsconv -Xcc -target-feature -Xcc +lse -Xcc -target-feature -Xcc +neon -Xcc -target-feature -Xcc +pauth -Xcc -target-feature -Xcc +perfmon -Xcc -target-feature -Xcc +ras -Xcc -target-feature -Xcc +rcpc -Xcc -target-feature -Xcc +rdm -Xcc -target-feature -Xcc +sha2 -Xcc -triple -Xcc arm64-apple-ios26.5.0 -Xcc -target-linker-version -Xcc 1267 -Xcc -target-sdk-version\=26.5 -Xcc -fmodules-validate-system-headers -Xcc -fno-modulemap-allow-subdirectory-search -Xcc -isysroot -Xcc /Applications/Xcode_26.6.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.5.sdk -Xcc -resource-dir -Xcc /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/clang -Xcc -fmodule-format\=obj -Xcc -fapinotes-swift-version\=5 -Xcc -std\=gnu11 -Xcc -fapinotes-modules -Xcc -fexceptions -Xcc -fskip-odr-check-in-gmf -Xcc -fmodules -Xcc -fno-implicit-modules -Xcc -fretain-comments-from-system-headers -Xcc -fobjc-exceptions -Xcc -fmax-type-align\=16 -Xcc -fstack-check -Xcc -fvisibility-inlines-hidden-static-local-var -Xcc -fmodule-feature -Xcc swift -Xcc -fno-odr-hash-protocols -Xcc -pic-level -Xcc 2 -Xcc -fencode-extended-block-signature -Xcc -stack-protector -Xcc 1 -Xcc -fobjc-runtime\=ios-26.5.0 -Xcc -fobjc-arc -Xcc -fobjc-runtime-has-weak -Xcc -fobjc-weak -Xcc -fgnuc-version\=4.2.1 -Xcc -fblocks -Xcc -fno-convergent-functions -Xcc -ffp-contract\=on -Xcc -fclang-abi-compat\=4.0 -Xcc -fno-experimental-relative-c++-abi-vtables -Xcc -fno-file-reproducible -Xcc -clang-vendor-feature\=+disableNonDependentMemberExprInCurrentInstantiation -Xcc -clang-vendor-feature\=+enableAggressiveVLAFolding -Xcc -clang-vendor-feature\=+revert09abecef7bbf -Xcc -clang-vendor-feature\=+thisNoAlignAttr -Xcc -clang-vendor-feature\=+thisNoNullAttr -Xcc -clang-vendor-feature\=+disableAtImportPrivateFrameworkInImplementationError -Xcc -O0 -Xcc -fno-assume-unique-vtables -Xcc -fcommon -Xcc -fdwarf2-cfi-asm -Xcc -fobjc-msgsend-selector-stubs -Xcc -fregister-global-dtors-with-atexit -Xcc -fno-strict-return -Xcc -debugger-tuning\=lldb -Xcc -disable-llvm-verifier -Xcc -funwind-tables\=1 -Xcc -enable-tlsdesc -Xcc -clear-ast-before-backend -Xcc -discard-value-names -Xcc -mframe-pointer\=non-leaf -Xcc -fno-loop-interchange -Xcc -save-temps\=obj -Xcc -fdiagnostics-hotness-threshold\=0 -Xcc -fdiagnostics-misexpect-tolerance\=0 -Xcc -D -Xcc __swift__\=51000 -Xcc -D -Xcc _ISO646_H_ -Xcc -D -Xcc __ISO646_H -Xcc -D -Xcc SWIFT_SDK_OVERLAY_APPKIT_EPOCH\=2 -Xcc -D -Xcc SWIFT_SDK_OVERLAY_FOUNDATION_EPOCH\=8 -Xcc -D -Xcc SWIFT_SDK_OVERLAY2_SCENEKIT_EPOCH\=3 -Xcc -D -Xcc SWIFT_SDK_OVERLAY_GAMEPLAYKIT_EPOCH\=1 -Xcc -D -Xcc SWIFT_SDK_OVERLAY_SPRITEKIT_EPOCH\=1 -Xcc -D -Xcc SWIFT_SDK_OVERLAY_COREIMAGE_EPOCH\=2 -Xcc -D -Xcc SWIFT_SDK_OVERLAY_DISPATCH_EPOCH\=2 -Xcc -D -Xcc SWIFT_SDK_OVERLAY_PTHREAD_EPOCH\=1 -Xcc -D -Xcc SWIFT_SDK_OVERLAY_COREGRAPHICS_EPOCH\=0 -Xcc -D -Xcc SWIFT_SDK_OVERLAY_UIKIT_EPOCH\=2 -Xcc -D -Xcc SWIFT_CLASS_EXTRA\= -Xcc -D -Xcc __SWIFT_ATTR_SUPPORTS_SENDABLE_DECLS\=1 -Xcc -D -Xcc __SWIFT_COMPILER_VERSION\=6003003001003 -Xcc -D -Xcc __SWIFT_ATTR_SUPPORTS_SENDING\=1 -Xcc -D -Xcc _LIBCPP_HARDENING_MODE\=_LIBCPP_HARDENING_MODE_DEBUG -Xcc -D -Xcc DEBUG\=1 -Xcc -fdefine-target-os-macros -load-resolved-plugin /Applications/Xcode_26.6.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/usr/lib/swift/host/plugins/libFoundationMacros.dylib\#/Applications/Xcode_26.6.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/usr/bin/swift-plugin-server\#FoundationMacros -load-resolved-plugin /Applications/Xcode_26.6.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/usr/lib/swift/host/plugins/libObservationMacros.dylib\#/Applications/Xcode_26.6.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/usr/bin/swift-plugin-server\#ObservationMacros -load-resolved-plugin /Applications/Xcode_26.6.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/usr/lib/swift/host/plugins/libSwiftMacros.dylib\#/Applications/Xcode_26.6.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/usr/bin/swift-plugin-server\#SwiftMacros -read-legacy-type-info-path\=/Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/iphoneos/layouts-arm64.yaml -clang-include-tree-filelist llvmcas://7c86ce5caa1ac90e7b4618261a111482c0f403be7201d051c0a2ce618bc21b21 -disable-implicit-swift-modules -Xcc -fno-implicit-modules -Xcc -fno-implicit-module-maps -explicit-swift-module-map-file llvmcas://72bd5941c8d0bfcd120d4442ac52924fd08ff6f5e70f1ef15c7e4685da19191b -debug-module-path /Users/runner/work/huamei-indexTTS/huamei-indexTTS/DerivedData/Build/Intermediates.noindex/HuameiIndexTTS.build/Debug-iphoneos/MLXIndexTTS2Core.build/Objects-normal/arm64/MLXIndexTTS2Core.swiftmodule -Xllvm -aarch64-use-tbi -enable-objc-interop -stack-check -sdk /Applications/Xcode_26.6.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.5.sdk -I /Users/runner/work/huamei-indexTTS/huamei-indexTTS/DerivedData/Build/Products/Debug-iphoneos -F /Users/runner/work/huamei-indexTTS/huamei-indexTTS/DerivedData/Build/Products/Debug-iphoneos/PackageFrameworks -F /Users/runner/work/huamei-indexTTS/huamei-indexTTS/DerivedData/Build/Products/Debug-iphoneos/PackageFrameworks -F /Users/runner/work/huamei-indexTTS/huamei-indexTTS/DerivedData/Build/Products/Debug-iphoneos/PackageFrameworks -F /Users/runner/work/huamei-indexTTS/huamei-indexTTS/DerivedData/Build/Products/Debug-iphoneos/PackageFrameworks -F /Users/runner/work/huamei-indexTTS/huamei-indexTTS/DerivedData/Build/Products/Debug-iphoneos/PackageFrameworks -F /Users/runner/work/huamei-indexTTS/huamei-indexTTS/DerivedData/Build/Products/Debug-iphoneos/PackageFrameworks -F /Users/runner/work/huamei-indexTTS/huamei-indexTTS/DerivedData/Build/Products/Debug-iphoneos/PackageFrameworks -F /Users/runner/work/huamei-indexTTS/huamei-indexTTS/DerivedData/Build/Products/Debug-iphoneos/PackageFrameworks -F /Users/runner/work/huamei-indexTTS/huamei-indexTTS/DerivedData/Build/Products/Debug-iphoneos/PackageFrameworks -F /Users/runner/work/huamei-indexTTS/huamei-indexTTS/DerivedData/Build/Products/Debug-iphoneos/PackageFrameworks -F /Users/runner/work/huamei-indexTTS/huamei-indexTTS/DerivedData/Build/Products/Debug-iphoneos -no-color-diagnostics -enable-testing -g -debug-info-format\=dwarf -dwarf-version\=4 -module-cache-path /Users/runner/work/huamei-indexTTS/huamei-indexTTS/DerivedData/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -swift-version 5 -Onone -D DEBUG -serialize-debugging-options -const-gather-protocols-file /Users/runner/work/huamei-indexTTS/huamei-indexTTS/DerivedData/Build/Intermediates.noindex/HuameiIndexTTS.build/Debug-iphoneos/MLXIndexTTS2Core.build/Objects-normal/arm64/MLXIndexTTS2Core_const_extract_protocols.json -enable-experimental-feature DebugDescriptionMacro -enable-bare-slash-regex -empty-abi-descriptor -validate-clang-modules-once -clang-build-session-file /Users/runner/work/huamei-indexTTS/huamei-indexTTS/DerivedData/ModuleCache.noindex/Session.modulevalidation -enable-anonymous-context-mangled-names -file-compilation-dir /Users/runner/work/huamei-indexTTS/huamei-indexTTS/ios -cache-compile-job -cas-path /Users/runner/work/huamei-indexTTS/huamei-indexTTS/DerivedData/CompilationCache.noindex/builtin -auto-bridging-header-chaining -module-name MLXIndexTTS2Core -frontend-parseable-output -disable-clang-spi -clang-target arm64-apple-ios26.5 -target-sdk-version 26.5 -target-sdk-name iphoneos26.5 -in-process-plugin-server-path /Applications/Xcode_26.6.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/libSwiftInProcPluginServer.dylib -o /Users/runner/work/huamei-indexTTS/huamei-indexTTS/DerivedData/Build/Intermediates.noindex/HuameiIndexTTS.build/Debug-iphoneos/MLXIndexTTS2Core.build/Objects-normal/arm64/Safetensors.o -o /Users/runner/work/huamei-indexTTS/huamei-indexTTS/DerivedData/Build/Intermediates.noindex/HuameiIndexTTS.build/Debug-iphoneos/MLXIndexTTS2Core.build/Objects-normal/arm64/TTSPipeline.o -o /Users/runner/work/huamei-indexTTS/huamei-indexTTS/DerivedData/Build/Intermediates.noindex/HuameiIndexTTS.build/Debug-iphoneos/MLXIndexTTS2Core.build/Objects-normal/arm64/TiktokenBPE.o -o /Users/runner/work/huamei-indexTTS/huamei-indexTTS/DerivedData/Build/Intermediates.noindex/HuameiIndexTTS.build/Debug-iphoneos/MLXIndexTTS2Core.build/Objects-normal/arm64/VoiceExtractor.o -o /Users/runner/work/huamei-indexTTS/huamei-indexTTS/DerivedData/Build/Intermediates.noindex/HuameiIndexTTS.build/Debug-iphoneos/MLXIndexTTS2Core.build/Objects-normal/arm64/Voiceprint.o -o /Users/runner/work/huamei-indexTTS/huamei-indexTTS/DerivedData/Build/Intermediates.noindex/HuameiIndexTTS.build/Debug-iphoneos/MLXIndexTTS2Core.build/Objects-normal/arm64/W2VBert.o -index-unit-output-path /HuameiIndexTTS.build/Debug-iphoneos/MLXIndexTTS2Core.build/Objects-normal/arm64/Safetensors.o -index-unit-output-path /HuameiIndexTTS.build/Debug-iphoneos/MLXIndexTTS2Core.build/Objects-normal/arm64/TTSPipeline.o -index-unit-output-path /HuameiIndexTTS.build/Debug-iphoneos/MLXIndexTTS2Core.build/Objects-normal/arm64/TiktokenBPE.o -index-unit-output-path /HuameiIndexTTS.build/Debug-iphoneos/MLXIndexTTS2Core.build/Objects-normal/arm64/VoiceExtractor.o -index-unit-output-path /HuameiIndexTTS.build/Debug-iphoneos/MLXIndexTTS2Core.build/Objects-normal/arm64/Voiceprint.o -index-unit-output-path /HuameiIndexTTS.build/Debug-iphoneos/MLXIndexTTS2Core.build/Objects-normal/arm64/W2VBert.o
+build	Build IPA	2026-09-05T04:58:00.8197320Z /Users/runner/work/huamei-indexTTS/huamei-indexTTS/ios/Sources/MLXIndexTTS2Core/IO/Safetensors.swift:143:48: error: 'halfToFloat' is inaccessible due to 'private' protection level
+build	Build IPA	2026-09-05T04:58:00.8282520Z             return halfs.map { SafetensorsFile.halfToFloat($0) }
+build	Build IPA	2026-09-05T04:58:00.8320250Z                                                ^~~~~~~~~~~
+build	Build IPA	2026-09-05T04:58:00.8358500Z /Users/runner/work/huamei-indexTTS/huamei-indexTTS/ios/Sources/MLXIndexTTS2Core/IO/Safetensors.swift:87:25: note: 'halfToFloat' declared here
+build	Build IPA	2026-09-05T04:58:00.8359490Z     private static func halfToFloat(_ h: UInt16) -> Float {
+build	Build IPA	2026-09-05T04:58:00.8359970Z                         ^
+build	Build IPA	2026-09-05T04:58:00.8532540Z ** BUILD FAILED **
+build	Build IPA	2026-09-05T04:58:00.8631950Z 
+build	Build IPA	2026-09-05T04:58:01.1030020Z ##[error]Process completed with exit code 65.

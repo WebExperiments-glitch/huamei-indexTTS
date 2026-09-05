@@ -1,0 +1,25 @@
+Builder - iOS Build Setup
+
+Detected repository: WebExperiments-glitch/huamei-indexTTS (from remote 'origin')
+
+
+Project:    huamei-indexTTS
+Repository: WebExperiments-glitch/huamei-indexTTS
+iOS Path:   ios
+
+Creating workflow file...
+  Created: .github\workflows\ios-build.yml
+  Created: .github\workflows\ios-share.yml
+Creating builder.json...
+  Created: builder.json
+
+Setup complete!
+
+? Commit and push workflow? [y/N] █
+
+? Run build now? [y/N] █
+
+
+To build later, run:
+  builder ios build
+

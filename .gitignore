@@ -23,3 +23,12 @@ ios/build/
 
 # 环境
 .env
+
+# 本地研究/工具（不随仓库分发；git rm --cached 解除跟踪）
+scripts/
+audit_final_report.md
+download_model.py
+plan_*.md
+research_*.md
+swift_engine_research.md
+diaoyanMAX.md

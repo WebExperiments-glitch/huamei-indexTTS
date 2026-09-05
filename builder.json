@@ -1,0 +1,18 @@
+{
+  "project": "huamei-indexTTS",
+  "platform": "ios",
+  "github": {
+    "owner": "WebExperiments-glitch",
+    "repo": "huamei-indexTTS"
+  },
+  "ios": {
+    "path": "ios",
+    "scheme": "HuameiIndexTTS"
+  },
+  "flutter": {
+    "watch": {}
+  },
+  "reactNative": {},
+  "kmp": {},
+  "mobai": {}
+}

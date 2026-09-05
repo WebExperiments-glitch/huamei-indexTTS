@@ -1,0 +1,8 @@
+﻿gh : failed to get run log: read tcp 192.168.2.8:5531->140.82.112.22:443: wsarecv: An existing connection was forcibly 
+closed by the remote host.
+At line:15 char:1116
++ ... scode\ripgrep\bin'; gh run view 33943990610 --log-failed 2>&1 | Out-F ...
++                         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (failed to get r...he remote host.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
