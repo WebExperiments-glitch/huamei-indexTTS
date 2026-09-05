@@ -2,6 +2,20 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <!-- 安装必需的通用键（GENERATE_INFOPLIST_FILE 不会总是注入，显式声明最稳） -->
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleExecutable</key>
+    <string>$(EXECUTABLE_NAME)</string>
+    <key>CFBundleIdentifier</key>
+    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+    <key>CFBundleName</key>
+    <string>$(PRODUCT_NAME)</string>
+    <key>CFBundleDisplayName</key>
+    <string>HuameiClone</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+
     <!-- 麦克风（应用内录制）-->
     <key>NSMicrophoneUsageDescription</key>
     <string>用于在 App 内录制参考音频，以克隆您的声音来合成语音。</string>
