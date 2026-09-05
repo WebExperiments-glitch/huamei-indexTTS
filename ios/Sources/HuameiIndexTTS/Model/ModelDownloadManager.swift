@@ -48,9 +48,7 @@ final class ModelDownloadManager: ObservableObject {
     static func loadManifest() -> ModelManifest? {
         guard let url = Bundle.main.url(forResource: "ModelManifest", withExtension: "json"),
               let data = try? Data(contentsOf: url) else { return nil }
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase   // base_url → baseURL
-        return try? decoder.decode(ModelManifest.self, from: data)
+        return try? JSONDecoder().decode(ModelManifest.self, from: data)
     }
 
     /// 指定组是否已就位

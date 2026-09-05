@@ -63,7 +63,8 @@ public final class TTSPipeline {
     static func loadJson(_ path: String, rows: Int, cols: Int) throws -> [[Float]] {
         let url = URL(fileURLWithPath: path)
         guard let data = try? Data(contentsOf: url),
-              let arr = try? JSONSerialization.jsonObject(with: data) as? [[Float]] else {
+              let obj = try? JSONSerialization.jsonObject(with: data),
+              let rowsArr = obj as? [[Any]] else {
             var detail = "文件不存在"
             if let attrs = try? FileManager.default.attributesOfItem(atPath: path),
                let s = attrs[.size] as? Int {
@@ -75,6 +76,12 @@ public final class TTSPipeline {
             }
             throw NSError(domain: "TTSPipeline", code: 2,
                           userInfo: [NSLocalizedDescriptionKey: "bad JSON: \((path as NSString).lastPathComponent)（\(detail)）"])
+        }
+        // 手动 NSNumber → Float 映射（[[Any]] 不能直接用 as? [[Float]] 桥接）
+        let arr = rowsArr.map { row in row.map { ($0 as? NSNumber)?.floatValue ?? 0 } }
+        guard arr.count == rows, arr.allSatisfy({ $0.count == cols }) else {
+            throw NSError(domain: "TTSPipeline", code: 2,
+                          userInfo: [NSLocalizedDescriptionKey: "bad JSON: \((path as NSString).lastPathComponent)（shape 不符 \(arr.count)×\(arr.first?.count ?? 0)）"])
         }
         return arr
     }
