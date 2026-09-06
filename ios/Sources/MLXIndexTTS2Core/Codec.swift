@@ -104,18 +104,23 @@ public final class SemanticCodecDecoder {
             feat = Ops.linear(feat, w: headW, b: headB)          // [1,T,1024]
             // ×2 nearest → up conv
             feat = feat.transposed(0, 2, 1)                      // [1,1024,T]
+            NSLog("[codec] pre-nearest shape=%@", feat.shape.description)
             feat = nearest2x(feat)                               // [1,1024,2T]
+            NSLog("[codec] post-nearest shape=%@", feat.shape.description)
             let out = Ops.conv1d(feat, w: upW, b: upB)           // [1,1024,2T]
             return out.transposed(0, 2, 1)                       // [1,2T,1024]
         }
     }
 
     private func nearest2x(_ x: MLXArray) -> MLXArray {
-        // 纯 MLX 最近邻 ×2：无 CPU 数组拷贝（asFloatArray 对 F16 会断言崩溃）
+        // [B,C,T] → 每元素重复（nearest ×2）；asFloatArray 已强转 F32 保证真数据
         let shape = x.shape
+        guard shape.count == 3 else { return x }
         let (b, c, t) = (shape[0], shape[1], shape[2])
-        let e = x.reshaped([b, c, t, 1])
-        let cc = MLX.concatenated([e, e], axis: 3)   // [b,c,t,2]
-        return cc.reshaped([b, c, t * 2])
+        let floats = x.asFloatArray()
+        guard floats.count == b * c * t, t > 0 else { return x }
+        var out = [Float](repeating: 0, count: b * c * t * 2)
+        for i in 0..<floats.count { out[i * 2] = floats[i]; out[i * 2 + 1] = floats[i] }
+        return MLXArray(out, [b, c, t * 2])
     }
 }

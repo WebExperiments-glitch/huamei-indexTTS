@@ -7,8 +7,9 @@ extension MLXArray {
 
     /// 取回 [Float]（数组必需路径：RoPE / WAV 输出 / 采样 logits）
     func asFloatArray() -> [Float] {
-        // mlx-swift 0.30：asArray(_ type:) 带类型参数（throws）；失败回退空数组
-        return (try? self.asArray(Float.self)) ?? []
+        // 必须先转 F32：F16 数组直接 asArray(Float.self) 会 throw → 返回空数组，
+        // 上层拿空数组构造 MLXArray 会触发形状断言崩溃（此为多轮崩溃根因）。
+        return (try? self.asType(.float32).asArray(Float.self)) ?? []
     }
 }
 
