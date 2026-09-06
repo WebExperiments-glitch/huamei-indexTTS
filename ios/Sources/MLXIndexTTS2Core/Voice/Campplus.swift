@@ -164,7 +164,7 @@ public final class Campplus {
 
     /// 2D conv：x [N,C,H,W] → channels-last → conv → 翻回 [N,O,H,W]。
     /// ⚠️ padding 按 kernel 传：主分支 k3 用 1；shortcut 是 1×1（官方 padding=0），不能统一写死 1。
-    private func conv2d(_ x: MLXArray, _ w: MLXArray, padding: Int = 1) -> MLXArray {
+    private func conv2d(_ x: MLXArray, _ w: MLXArray, padding: IntOrPair = 1) -> MLXArray {
         // x [N,C,H,W] w [O,Kh,Kw,I]；mlx conv2d 为 channels-last：input (N,H,W,C_in)、output (N,H,W,O)。
         let xt = x.transposed(0, 2, 3, 1)                       // [N,H,W,C]
         let o = MLX.conv2d(xt, w, stride: 1, padding: padding)  // [N,H,W,O]
