@@ -87,11 +87,12 @@ public final class GPTGenerator {
         prefixEmb = MLX.concatenated([prefixEmb, MLXArray.zeros([1, d])], axis: 0)
         prefixEmb = MLX.concatenated([prefixEmb, MLXArray.zeros([1, d])], axis: 0)   // [3,1280]
 
-        let langRow = try rowVec("lang_embedding.weight", min(langId, TTSConfig.langCount - 1))
+        // ⚠️ 语言（<|zh|> 等）已作为 text token 由 text_embedding 编码；
+        //    官方 inference 的 prepare_gpt_inputs 不加 lang_embedding，这里去掉多余 langRow。
         for (pos, tok) in textSeq.enumerated() {
             var row = try rowVec("text_embedding.weight", tok)
             let tpos = try rowVec("text_pos_embedding.emb.weight", pos)
-            row = row + tpos + langRow
+            row = row + tpos
             prefixEmb = MLX.concatenated([prefixEmb, row], axis: 0)
         }
         // [3+L, D]

@@ -169,6 +169,7 @@ final class InferenceEngine: ObservableObject {
                     emotionWeight: [Float],
                     config: SynthesizeConfig,
                     seed: UInt64,
+                    referenceURL: URL?,
                     onProgress: @escaping (String, Double) -> Void) async throws -> URL {
 
         guard state == .ready, let pipe = pipeline else {
@@ -180,6 +181,26 @@ final class InferenceEngine: ObservableObject {
             DLog.reset()                       // 清空上次记录，开始新一轮
             DLog.write("ENGINE synthesize start")
             SystemMonitor.shared.appendLog("开始合成推理…")
+            // A2：参考音频 → 声纹（style + prompt 束）；缺参考音频/克隆组件时回退预设音色
+            var styleOverride: [Float]?
+            var promptBundle: PromptBundle?
+            if let ref = referenceURL {
+                do {
+                    let pcm = try Self.decodeToPCM16k(url: ref)
+                    let extr = VoiceExtractor(paths: Self.clonePaths)
+                    let vb = try extr.voiceprint(audioURL: ref, pcm16k: pcm)
+                    styleOverride = vb.style
+                    promptBundle = extr.promptBundle(vb)
+                    DLog.write("A2 voiceprint style=\(vb.style.count) promptFrames=\(vb.melFrames) src=\(vb.sourceName)")
+                    SystemMonitor.shared.appendLog("已提取克隆声纹：\(vb.sourceName)（prompt \(vb.melFrames) 帧）")
+                } catch {
+                    SystemMonitor.shared.appendLog("克隆声纹提取失败，回退预设：\(error.localizedDescription)")
+                    DLog.write("A2 voiceprint FAIL: \(String(describing: error))")
+                    styleOverride = nil; promptBundle = nil
+                }
+            } else {
+                DLog.write("A2 无参考音频，走预设音色")
+            }
             // withError：捕获 MLX 内部错误，避免 _mlx_error → fatalError 崩溃；错误可抛给 UI
             let floats = try MLX.withError {
                 try pipe.synthesize(
@@ -189,7 +210,8 @@ final class InferenceEngine: ObservableObject {
                     emoWeight: emotionWeight,
                     config: config,
                     seed: seed,
-                    prompt: nil,            // TODO: 从模型目录加载 A1 条件束（见 README）
+                    prompt: promptBundle,            // A2：参考音频条件束
+                    styleOverride: styleOverride,    // A2：克隆声纹（192）
                     onStage: { stage, frac in
                         // 阶段进度写入日志面板（崩溃前用户可看到最后到达的阶段）
                         let pct = Int(frac * 100)
@@ -206,6 +228,45 @@ final class InferenceEngine: ObservableObject {
             SystemMonitor.shared.appendLog("合成完成，已生成音频")
             return url
         }.value
+    }
+
+    // MARK: - A2 克隆辅助
+
+    /// A2 克隆组件路径（模型目录内 clone 组；s2mel 复用 synthesis 组）
+    private static var clonePaths: VoiceExtractor.ComponentPaths {
+        let dir = modelDir
+        return VoiceExtractor.ComponentPaths(
+            w2vBert: dir.appendingPathComponent("w2v-bert-2.0/model.safetensors").path,
+            campplus: dir.appendingPathComponent("campplus_cn_common.safetensors").path,
+            s2mel: dir.appendingPathComponent("s2mel.safetensors").path,
+            statsJSON: dir.appendingPathComponent("wav2vec2bert_stats.json").path
+        )
+    }
+
+    /// URL → 16kHz mono PCM（AVFoundation 解码 → 通道平均 → 重采样）
+    nonisolated private static func decodeToPCM16k(url: URL) throws -> [Float] {
+        let file = try AVAudioFile(forReading: url)
+        let fmt = file.processingFormat
+        let cap = AVAudioFrameCount(file.length)
+        guard cap > 0, let buf = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: cap) else {
+            throw NSError(domain: "InferenceEngine", code: 4,
+                          userInfo: [NSLocalizedDescriptionKey: "无法解码参考音频"])
+        }
+        try file.read(into: buf)
+        let frames = Int(buf.frameLength)
+        let ch = Int(fmt.channelCount)
+        guard frames > 0, ch > 0, let data = buf.floatChannelData else {
+            throw NSError(domain: "InferenceEngine", code: 4,
+                          userInfo: [NSLocalizedDescriptionKey: "参考音频为空或解码失败"])
+        }
+        var mono = [Float](repeating: 0, count: frames)
+        for i in 0..<frames {
+            var s: Float = 0
+            for c in 0..<ch { s += data[c][i] }
+            mono[i] = s / Float(ch)
+        }
+        let src = Int(fmt.sampleRate)
+        return AudioFeatures.resample(mono, from: src, to: 16000)
     }
 
     // MARK: - WAV 写出

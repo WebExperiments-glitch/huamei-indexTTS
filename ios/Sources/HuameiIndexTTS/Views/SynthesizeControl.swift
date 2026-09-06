@@ -133,6 +133,7 @@ struct SynthesizeControl: View {
                 emotionWeight: [1, 0, 0, 0, 0, 0, 0, 0],
                 config: config,
                 seed: 42,
+                referenceURL: s.referenceURL,   // A2：有参考音频 → 克隆；否则预设
                 onProgress: { label, frac in
                     Task { @MainActor in
                         s.progress = frac
