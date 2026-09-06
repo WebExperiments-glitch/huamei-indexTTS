@@ -38,11 +38,14 @@ enum Rotary {
     /// interleave-pair 旋转：x [B,T,H,64]；cs [T,32,2]
     /// 每 pair (x[2j], x[2j+1]) ← (x0·cos−x1·sin, x0·sin+x1·cos)
     /// offset：KV 增量步传绝对起始位置（否则增量步会用局部位置 0）
-    static func applyCPU(_ x: MLXArray, cs: MLXArray, offset: Int = 0) -> MLXArray {
+    /// ⚠️ throwing：取数失败（空数组/handler 挂起错误）→ 抛错而非空数组构造 trap
+    static func applyCPU(_ x: MLXArray, cs: MLXArray, offset: Int = 0) throws -> MLXArray {
         let shape = x.shape
+        guard shape.count == 4 else { throw RotaryError.badRank(shape) }
         let (b, t, h, d) = (shape[0], shape[1], shape[2], shape[3])
+        guard d % 2 == 0, d > 0 else { throw RotaryError.badHeadDim(d) }
         let half = d / 2
-        let xf = x.asFloatArray()
+        let xf = try x.asType(.float32).asArray(Float.self)
         let cf = cs.asFloatArray()
         var out = [Float](repeating: 0, count: xf.count)
         for bi in 0..<b {
@@ -62,6 +65,17 @@ enum Rotary {
             }
         }
         return MLXArray(out, shape)
+    }
+
+    enum RotaryError: Error, CustomStringConvertible {
+        case badRank([Int])
+        case badHeadDim(Int)
+        var description: String {
+            switch self {
+            case .badRank(let s): return "RoPE 需要 4 维 [B,T,H,D]，得到 \(s)"
+            case .badHeadDim(let d): return "RoPE head_dim 须为偶数，得到 \(d)"
+            }
+        }
     }
 }
 

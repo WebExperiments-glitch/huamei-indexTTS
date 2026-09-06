@@ -39,7 +39,7 @@ public struct S2MelInfer {
 
     // MARK: - DiT forward（x/prompt_x/cond/style → velocity）
     public func diTForward(x: MLXArray, promptX: MLXArray, cond: MLXArray,
-                           t: MLXArray, style: MLXArray) -> MLXArray {
+                           t: MLXArray, style: MLXArray) throws -> MLXArray {
         // x/promptX [1,80,T]；cond [1,T,512]；style [1,192]
         let B = x.shape[0], T = x.shape[2]
         let t1 = tEmb1(t)                                      // [B,512]
@@ -75,8 +75,8 @@ public struct S2MelInfer {
             var q = qkv[0..., 0..., 0..<D].reshaped([B, T, H, HD])
             var k = qkv[0..., 0..., D..<(2 * D)].reshaped([B, T, H, HD])
             let v = qkv[0..., 0..., (2 * D)..<(3 * D)].reshaped([B, T, H, HD])
-            q = Rotary.applyCPU(q, cs: freqT)            // [B,T,H,HD]
-            k = Rotary.applyCPU(k, cs: freqT)
+            q = try Rotary.applyCPU(q, cs: freqT)            // [B,T,H,HD]
+            k = try Rotary.applyCPU(k, cs: freqT)
             let qB = q.transposed(0, 2, 1, 3)            // [B,H,T,HD]
             let kB = k.transposed(0, 2, 1, 3)
             let vB = v.transposed(0, 2, 1, 3)
@@ -237,14 +237,14 @@ public struct S2MelInfer {
                 let mu2 = MLX.concatenated([mu, MLXArray.zeros([1, T, 512]).asType(mu.dtype)], axis: 0)
                 let xx = MLX.concatenated([xt, xt], axis: 0)
                 let tt = MLXArray([tSpan[s - 1], tSpan[s - 1]], [2])
-                var d = diTForward(x: xx, promptX: px2, cond: mu2, t: tt, style: st2)
+                var d = try diTForward(x: xx, promptX: px2, cond: mu2, t: tt, style: st2)
                 let dHalf = d.shape[0] / 2
                 let d1 = d[0..., 0..<dHalf, 0...]
                 let d0 = d[0..., dHalf..<d.shape[0], 0...]
                 d = (d1 * (1 + cfg)) - (d0 * cfg)
                 xt = xt + d * dt
             } else {
-                let d = diTForward(x: xt, promptX: promptX, cond: mu, t: tVal, style: style)
+                let d = try diTForward(x: xt, promptX: promptX, cond: mu, t: tVal, style: style)
                 xt = xt + d * dt
             }
             xt = zeroPrefix(xt, count: promptLen)

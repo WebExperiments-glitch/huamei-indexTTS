@@ -145,7 +145,9 @@ enum Ops {
         func reversedSlice(_ r: Range<Int>) -> MLXArray {
             let sl = x[0..., 0..., r]
             let b = sl.shape[0], c = sl.shape[1], l = sl.shape[2]
+            // asFloatArray 失败（吞错误）会返回空 → 直接退回原 slice，避免空数组构造 trap
             let f = sl.asFloatArray()
+            guard f.count == b * c * l, l > 0 else { return sl }
             var rf = [Float](repeating: 0, count: f.count)
             for i in 0..<(b * c) {
                 for j in 0..<l { rf[i * l + j] = f[i * l + (l - 1 - j)] }
