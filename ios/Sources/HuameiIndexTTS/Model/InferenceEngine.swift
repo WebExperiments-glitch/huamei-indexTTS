@@ -183,6 +183,13 @@ final class InferenceEngine: ObservableObject {
                     seed: seed,
                     prompt: nil,            // TODO: 从模型目录加载 A1 条件束（见 README）
                     onStage: { stage, frac in
+                        // 阶段进度写入日志面板（崩溃前用户可看到最后到达的阶段）
+                        let pct = Int(frac * 100)
+                        if stage == "s2mel" {
+                            SystemMonitor.shared.appendLog("s2mel 扩散 \(pct)%…")
+                        } else if pct % 25 == 0 || stage == "done" {
+                            SystemMonitor.shared.appendLog("阶段 \(stage) \(pct)%…")
+                        }
                         Task { @MainActor in onProgress(stage, frac) }
                     }
                 )

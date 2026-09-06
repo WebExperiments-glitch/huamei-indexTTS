@@ -31,7 +31,9 @@ public enum TTSConfig {
     // S2Mel（s2mel.safetensors）
     public static let melChannels    = 80     // DiT in_channels / mel 频带
     public static let cfmSteps       = 25
-    public static let cfmCfgRate     = 0.7
+    // ⚠️ 诊断：CFG(batch=2) 与单 batch 二分定位崩溃用；定为 0.0 走单 batch（质量略降）。
+    //    崩溃定位后再恢复 0.7。
+    public static let cfmCfgRate     = 0.0
     public static let ditDim         = 512
     public static let ditLayers      = 13
     public static let ditHeads       = 8
