@@ -222,8 +222,11 @@ public struct S2MelInfer {
         var x = MLXArray(xF, [1, 80, T])
         let z = x
         var promptX = MLXArray.zeros([1, 80, T])
-        // prompt 区锚定
-        promptX = copySlice(promptX, src: prompt, count: promptLen)
+        // prompt 区锚定：prompt(P) 左对齐 + 零填充（MLX 原生，替换手写 copySlice CPU 循环）
+        if promptLen > 0 && promptLen <= T {
+            let padZ = MLXArray.zeros([1, 80, T - promptLen]).asType(prompt.dtype)
+            promptX = MLX.concatenated([prompt[0..., 0..., 0..<promptLen], padZ], axis: 2)
+        }
         // x[..., :P] = 0
         x = zeroPrefix(x, count: promptLen)
 
@@ -256,22 +259,6 @@ public struct S2MelInfer {
         }
         _ = z
         return xt
-    }
-
-    private func copySlice(_ dst: MLXArray, src: MLXArray, count: Int) -> MLXArray {
-        // [1,80,count] 拷到 dst 前 count
-        let srcSlice = src[0..., 0..., 0..<count]
-        let dstShape = dst.shape
-        let (b, c, t) = (dstShape[0], dstShape[1], dstShape[2])
-        let srcF = srcSlice.asFloatArray()
-        let dstF = dst.asFloatArray()
-        var out = dstF
-        for i in 0..<srcF.count {
-            let bi = i / (c * count); let rest = i % (c * count)
-            let ci = rest / count; let ti = rest % count
-            out[(bi * c + ci) * t + ti] = srcF[i]
-        }
-        return MLXArray(out, dstShape)
     }
 
     private func zeroPrefix(_ x: MLXArray, count: Int) -> MLXArray {
