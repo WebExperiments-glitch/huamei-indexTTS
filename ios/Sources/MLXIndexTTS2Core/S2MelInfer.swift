@@ -281,7 +281,7 @@ public struct S2MelInfer {
                     xt = zeroPrefix(xt, count: promptLen)
                     // eager + 回写内存：双 batch(CFG) 下 Metal 中间缓冲累积会 OOM → 每步同步+清缓存
                     MLX.eval(xt)
-                    MLX.synchronize()
+                    Stream().synchronize()
                     MLX.Memory.clearCache()
                 }
             } catch {
