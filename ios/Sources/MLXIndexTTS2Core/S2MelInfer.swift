@@ -248,14 +248,10 @@ public struct S2MelInfer {
                 xt = xt + d * dt
             }
             xt = zeroPrefix(xt, count: promptLen)
-            // ⚠️ 每步 eager 求值：把任何 MLX 形状/广播/dtype 错误在此转成可读 throw，
-            //    （withError 空结果的 Swift trap 是此前 EXC_BREAKPOINT 崩溃的本质）
-            do {
-                try MLX.withError { MLX.eval(xt) }
-            } catch {
-                NSLog("[s2mel] cfm step %d/%d MLX error: %@", s, steps, error.localizedDescription)
-                throw error
-            }
+            // ⚠️ 每步 eager 求值：让任何 MLX 形状/广播/dtype 错误在循环内立即暴露，
+            //    由外层（InferenceEngine）withError 转成可读 throw；不可再嵌套 withError
+            //    （嵌套会破坏错误 handler 状态 → Swift 空结果 trap = 此前 brk#1 崩溃）
+            MLX.eval(xt)
         }
         return xt
     }
