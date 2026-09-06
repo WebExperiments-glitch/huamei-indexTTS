@@ -71,11 +71,15 @@ public struct S2MelInfer {
             let lnA = Ops.rmsNorm(h, weight: blk.anNormW, eps: 1e-5)
             let ca = adaln(lnA, c: t1, pw: blk.anProjW, pb: blk.anProjB)
             // qkv（fused）[B,T,1536] → q|k|v 三段（各 512）
+            // ⚠️ 用 reshape+int-index 拆分（与 GPT2 一致，官方 gpt_fast 用 split）。
+            //    此前用嵌套 Range 下标 qkv[0...,0...,0..<D] 在 mlx B=2 路径
+            //    的 getItemND 上有已知脆弱性 → v52/v55 CFG step2 崩。
             let qkv = Ops.linear(ca, w: blk.attnWqkv, b: nil)
             let D = TTSConfig.ditDim, HD = TTSConfig.ditHeadDim, H = TTSConfig.ditHeads
-            var q = qkv[0..., 0..., 0..<D].reshaped([B, T, H, HD])
-            var k = qkv[0..., 0..., D..<(2 * D)].reshaped([B, T, H, HD])
-            let v = qkv[0..., 0..., (2 * D)..<(3 * D)].reshaped([B, T, H, HD])
+            let qkv3 = qkv.reshaped([B, T, 3, D])
+            var q = qkv3[0..., 0..., 0, 0...].reshaped([B, T, H, HD])
+            var k = qkv3[0..., 0..., 1, 0...].reshaped([B, T, H, HD])
+            let v = qkv3[0..., 0..., 2, 0...].reshaped([B, T, H, HD])
             q = try Rotary.applyCPU(q, cs: freqT)            // [B,T,H,HD]
             k = try Rotary.applyCPU(k, cs: freqT)
             let qB = q.transposed(0, 2, 1, 3)            // [B,H,T,HD]

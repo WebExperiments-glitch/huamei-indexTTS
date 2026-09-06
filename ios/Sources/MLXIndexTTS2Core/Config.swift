@@ -31,9 +31,7 @@ public enum TTSConfig {
     // S2Mel（s2mel.safetensors）
     public static let melChannels    = 80     // DiT in_channels / mel 频带
     public static let cfmSteps       = 25
-    // CFG(0.7 双batch) 有确定性下标bug(step2 崩)，暂时固定 0.0 单batch（已全链验证出声）。
-    // CFG 单独攻（diTForward 逐层打点定位）后再开回。
-    public static let cfmCfgRate     = 0.0
+    public static let cfmCfgRate     = 0.7
     public static let ditDim         = 512
     public static let ditLayers      = 13
     public static let ditHeads       = 8
