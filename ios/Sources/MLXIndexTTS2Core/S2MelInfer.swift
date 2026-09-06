@@ -183,8 +183,13 @@ public struct S2MelInfer {
                 x = try nearestSize(x, size: targetLen)
                 DLog.write("LR nearest x=\(x.shape) dtype=\(x.dtype)")
                 for i in 0..<4 {
-                    var y = Ops.conv1d(x, w: w.lrConvs[i].0, b: w.lrConvs[i].1, padding: 1)
-                    y = Ops.layerNorm(y, weight: w.lrNorms[i].0, bias: w.lrNorms[i].1, eps: 1e-5)
+                    var y = Ops.conv1d(x, w: w.lrConvs[i].0, b: w.lrConvs[i].1, padding: 1)   // [1,512,T']
+                    // ⚠️ 官方 LayerNorm 对通道维归一：x.transpose(1,-1) 后按 channels(512) 归一。
+                    //    此前直接对 channels-first [1,512,T'] 做最后轴归一 → weight[512] 与
+                    //    T' 尾维 broadcast 失败 → (1,512,T') vs (512)（mlx broadcast 报错）
+                    y = Ops.layerNorm(y.transposed(0, 2, 1),
+                                      weight: w.lrNorms[i].0, bias: w.lrNorms[i].1, eps: 1e-5)
+                        .transposed(0, 2, 1)
                     x = Ops.mish(y)
                     DLog.write("LR conv\(i) x=\(x.shape)")
                 }
