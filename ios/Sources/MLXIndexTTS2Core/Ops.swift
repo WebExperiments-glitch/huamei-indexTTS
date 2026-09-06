@@ -125,6 +125,10 @@ enum Ops {
     /// 零 pad（尾轴）
     static func zeroPad(_ x: MLXArray, left: Int, right: Int) -> MLXArray {
         guard left > 0 || right > 0 else { return x }
+        guard x.shape.count == 3 else {
+            NSLog("[Ops] zeroPad 非 3D 输入 \(x.shape)")
+            return x
+        }
         let (b, c, _) = (x.shape[0], x.shape[1], x.shape[2])
         func zeros(_ n: Int) -> MLXArray {
             // 与 x 同 dtype，避免 F16/F32 混合拼接

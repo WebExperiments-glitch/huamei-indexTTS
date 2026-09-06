@@ -95,25 +95,38 @@ public final class BigVGAN {
     }
 
     /// mel [1,80,T] → wav [1,1, T*256]
-    public func synthesize(mel: MLXArray) -> MLXArray {
-        var x = Ops.zeroPad(mel, left: 3, right: 3)
-        x = Ops.conv1d(x, w: convPreW, b: convPreB)          // [1,1536,T]
-        for stage in 0..<6 {
-            x = upsample(x, stage: stage)                    // ×rate 逐级上采样
-            var acc: MLXArray?
-            for j in 0..<3 {
-                let blk = blocks[stage * 3 + j]
-                let o = blk.call(x)
-                acc = (acc == nil) ? o : acc! + o
+    public func synthesize(mel: MLXArray) throws -> MLXArray {
+        DLog.write("BigVGAN begin mel=\(mel.shape) dtype=\(mel.dtype)")
+        do {
+            try MLX.withError {
+                var x = Ops.zeroPad(mel, left: 3, right: 3)
+                x = Ops.conv1d(x, w: convPreW, b: convPreB)          // [1,1536,T]
+                for stage in 0..<6 {
+                    x = upsample(x, stage: stage)                    // ×rate 逐级上采样
+                    DLog.write("BigVGAN stage\(stage) up x=\(x.shape)")
+                    var acc: MLXArray?
+                    for j in 0..<3 {
+                        let blk = blocks[stage * 3 + j]
+                        let o = blk.call(x)
+                        acc = (acc == nil) ? o : acc! + o
+                    }
+                    x = acc! / 3.0
+                    MLX.eval(x)
+                    DLog.write("BigVGAN stage\(stage) ok x=\(x.shape)")
+                }
+                // post snake → conv_post(1,7,24) → tanh
+                x = snakeBetaOp(x, alpha: postAlpha, beta: postBeta)
+                x = Ops.zeroPad(x, left: 3, right: 3)
+                x = Ops.conv1d(x, w: convPostW, b: nil)
+                x = MLX.tanh(x)
+                MLX.eval(x)
+                DLog.write("BigVGAN done x=\(x.shape)")
+                return x
             }
-            x = acc! / 3.0
+        } catch {
+            DLog.write("BigVGAN ERROR: \(String(describing: error))")
+            throw error
         }
-        // post snake → conv_post(1,7,24) → tanh
-        x = snakeBetaOp(x, alpha: postAlpha, beta: postBeta)
-        x = Ops.zeroPad(x, left: 3, right: 3)
-        x = Ops.conv1d(x, w: convPostW, b: nil)
-        x = MLX.tanh(x)
-        return x
     }
 }
 

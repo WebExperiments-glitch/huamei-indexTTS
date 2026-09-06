@@ -227,6 +227,11 @@ public final class TTSPipeline {
             // 裁掉 prompt 段
             let total = melFull.shape[2]
             mel = total > promptLen ? melFull[0..., 0..., promptLen..<total] : melFull
+            guard mel.shape[2] >= 2 else {
+                throw NSError(domain: "TTSPipeline", code: 3,
+                              userInfo: [NSLocalizedDescriptionKey: "mel 帧数过短 \(mel.shape)（target=\(targetLen) prompt=\(promptLen) total=\(total)）"])
+            }
+            DLog.write("stage mel mel=\(mel.shape)")
             releaseS2Mel()
         }
 
@@ -235,7 +240,7 @@ public final class TTSPipeline {
         do {
             let v = try ensureVocoder()
             onStage("vocoder", 0.95)
-            let wav = v.synthesize(mel: mel)               // [1,1,N]
+            let wav = try v.synthesize(mel: mel)               // [1,1,N]
             floats = wav[0..., 0, 0...].reshaped([-1]).asFloatArray()
             releaseVocoder()
         }
