@@ -153,7 +153,7 @@ public final class TTSPipeline {
                            seed: UInt64,
                            prompt: PromptBundle?,
                            styleOverride: [Float]? = nil,
-                           onStage: (String, Double) -> Void) throws -> [Float] {
+                           onStage: @escaping (String, Double) -> Void) throws -> [Float] {
 
         defer { unloadAll() }                       // 全路径兜底（含抛错）
 
