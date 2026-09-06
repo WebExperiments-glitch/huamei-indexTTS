@@ -216,23 +216,29 @@ final class InferenceEngine: ObservableObject {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let url = dir.appendingPathComponent("out-\(UUID().uuidString.prefix(8)).wav")
 
-        // ⚠️ AVAudioPlayer 对 Float32 WAV 支持不可靠 → 写标准 16-bit PCM（Int16 interleaved）
-        let fmt = AVAudioFormat(commonFormat: .pcmFormatInt16,
-                                sampleRate: Double(sampleRate),
-                                channels: 1, interleaved: true)!
-        guard let file = try? AVAudioFile(forWriting: url, settings: fmt.settings) else {
-            throw NSError(domain: "WAV", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "无法创建音频文件"])
+        // ⚠️ 手写 16-bit PCM WAV：不依赖 AVAudioFormat/AVAudioFile（真机偶发返回 nil/失败 → 崩溃），
+        //    标准 RIFF 头 + 数据，AVAudioPlayer/系统播放器 100% 兼容。
+        let count = samples.count
+        let dataSize = count * 2
+        var d = Data(capacity: 44 + dataSize)
+        func str(_ s: String) { d.append(contentsOf: Array(s.utf8)) }
+        func le16(_ v: UInt16) { withUnsafeBytes(of: v.littleEndian) { d.append(contentsOf: $0) } }
+        func le32(_ v: UInt32) { withUnsafeBytes(of: v.littleEndian) { d.append(contentsOf: $0) } }
+        str("RIFF"); le32(UInt32(36 + dataSize)); str("WAVE")
+        str("fmt "); le32(16)
+        le16(1)                              // PCM
+        le16(1)                              // mono
+        le32(UInt32(sampleRate))             // sample rate
+        le32(UInt32(sampleRate) * 2)         // byte rate
+        le16(2)                              // block align
+        le16(16)                             // bits per sample
+        str("data"); le32(UInt32(dataSize))
+        for s in samples {
+            let v: Double = s.isFinite ? Double(s) : 0
+            let clamped = max(-1.0, min(1.0, v))
+            le16(UInt16(bitPattern: Int16(clamping: Int(clamped * 32767.0))))
         }
-        let buf = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: AVAudioFrameCount(samples.count))!
-        buf.frameLength = AVAudioFrameCount(samples.count)
-        if let ch = buf.int16ChannelData?[0] {
-            for (i, s) in samples.enumerated() {
-                let v = s.isFinite ? s : 0
-                ch[i] = Int16(clamping: Int(v * 32767.0))
-            }
-        }
-        try file.write(from: buf)
+        try d.write(to: url)
         return url
     }
 }
