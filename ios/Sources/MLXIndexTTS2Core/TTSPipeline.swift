@@ -191,7 +191,7 @@ public final class TTSPipeline {
         do {
             let c = try ensureCodec()
             onStage("codec", 0.55)
-            sInfer = c.decode(codes: codes)              // [1,2T,1024]
+            sInfer = try c.decode(codes: codes)              // [1,2T,1024]
             releaseCodec()
         }
 

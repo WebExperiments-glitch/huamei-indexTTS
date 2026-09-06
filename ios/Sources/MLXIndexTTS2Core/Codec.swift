@@ -79,8 +79,10 @@ public final class SemanticCodecDecoder {
     }
 
     /// decode：codes [T] → S_infer [2T, 1024]
-    public func decode(codes: [Int]) -> MLXArray {
+    public func decode(codes: [Int]) throws -> MLXArray {
         let T = codes.count
+        guard T > 0 else { throw NSError(domain: "Codec", code: 1,
+                                         userInfo: [NSLocalizedDescriptionKey: "codes 为空"]) }
         // vq2emb：embedding 行（文件直读 → CPU 数组，8×T 很小）
         var embRows = [Float](repeating: 0, count: T * 8)
         for t in 0..<T {
@@ -91,9 +93,7 @@ public final class SemanticCodecDecoder {
         var x = MLXArray(embRows, [T, 8]).transposed(0, 1)  // [8, T]
         x = x.reshaped([1, 8, T])
         // 权重为 F16：输入必须转成同等 dtype（F32 输入 + F16 权重在 MLX conv1d 断言崩溃）
-        if outProjW.dtype == .float16 {
-            x = x.asType(.float16)
-        }
+        x = x.asType(outProjW.dtype)
         var q = Ops.conv1d(x, w: outProjW, b: outProjB)     // [1,1024,T]
         // decoder
         var feat = vocosBackbone(q)                          // [1,T,384]
