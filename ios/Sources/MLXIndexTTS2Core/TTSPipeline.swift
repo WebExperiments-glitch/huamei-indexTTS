@@ -204,7 +204,7 @@ public final class TTSPipeline {
             onStage("s2mel", 0.75)
             let targetLen = Int(Double(sInfer.shape[1]) * TTSConfig.lengthRatio * config.durationFactor)
             DLog.write("stage s2mel sInfer=\(sInfer.shape) targetLen=\(targetLen)")
-            let cond = infer.lengthRegulate(sInfer, targetLen: targetLen)   // [1,T',512]
+            let cond = try infer.lengthRegulate(sInfer, targetLen: targetLen)   // [1,T',512]
 
             let promptLen = prompt?.refMel.shape[2] ?? 86
             let catMu: MLXArray

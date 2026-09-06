@@ -172,25 +172,46 @@ public struct S2MelInfer {
     }
 
     // MARK: - LengthRegulator
-    public func lengthRegulate(_ sInfer: MLXArray, targetLen: Int) -> MLXArray {
+    public func lengthRegulate(_ sInfer: MLXArray, targetLen: Int) throws -> MLXArray {
         // sInfer [1,T,1024]
-        var x = Ops.linear(sInfer, w: w.lrContentProjW, b: w.lrContentProjB)  // [1,T,512]
-        x = x.transposed(0, 2, 1)
-        x = nearestSize(x, size: targetLen)
-        for i in 0..<4 {
-            // lrConvs k=3 → padding=1（MLX conv 原生 padding，避免 concat 路径）
-            var y = Ops.conv1d(x, w: w.lrConvs[i].0, b: w.lrConvs[i].1, padding: 1)
-            y = Ops.layerNorm(y, weight: w.lrNorms[i].0, bias: w.lrNorms[i].1, eps: 1e-5)
-            x = Ops.mish(y)
+        DLog.write("LR begin sInfer=\(sInfer.shape) target=\(targetLen) dtype=\(sInfer.dtype)")
+        do {
+            try MLX.withError {
+                var x = Ops.linear(sInfer, w: w.lrContentProjW, b: w.lrContentProjB)  // [1,T,512]
+                x = x.transposed(0, 2, 1)
+                DLog.write("LR proj x=\(x.shape) dtype=\(x.dtype)")
+                x = try nearestSize(x, size: targetLen)
+                DLog.write("LR nearest x=\(x.shape) dtype=\(x.dtype)")
+                for i in 0..<4 {
+                    var y = Ops.conv1d(x, w: w.lrConvs[i].0, b: w.lrConvs[i].1, padding: 1)
+                    y = Ops.layerNorm(y, weight: w.lrNorms[i].0, bias: w.lrNorms[i].1, eps: 1e-5)
+                    x = Ops.mish(y)
+                    DLog.write("LR conv\(i) x=\(x.shape)")
+                }
+                x = Ops.conv1d(x, w: w.lrFinal.0, b: w.lrFinal.1)
+                MLX.eval(x)
+                DLog.write("LR ok x=\(x.shape)")
+                return x.transposed(0, 2, 1)                                    // [1,T',512]
+            }
+        } catch {
+            DLog.write("LR ERROR: \(String(describing: error))")
+            throw error
         }
-        x = Ops.conv1d(x, w: w.lrFinal.0, b: w.lrFinal.1)
-        return x.transposed(0, 2, 1)                                    // [1,T',512]
     }
 
-    private func nearestSize(_ x: MLXArray, size: Int) -> MLXArray {
-        // [B,C,T] → 最近邻插值
+    /// [B,C,T] → 最近邻插值（⚠️ throwing：取数失败（空数组）直接可读抛错而非越界 trap）
+    private func nearestSize(_ x: MLXArray, size: Int) throws -> MLXArray {
         let (b, c, t) = (x.shape[0], x.shape[1], x.shape[2])
-        let floats = x.asFloatArray()
+        guard b > 0, c > 0, t > 0, size > 0,
+              b * c * size <= 200_000_000 else {
+            throw NSError(domain: "S2Mel", code: 7,
+                          userInfo: [NSLocalizedDescriptionKey: "nearestSize 非法形状 \(x.shape) size=\(size)"])
+        }
+        let floats = try x.asType(.float32).asArray(Float.self)   // 空数组直接抛（可读）
+        guard floats.count == b * c * t else {
+            throw NSError(domain: "S2Mel", code: 8,
+                          userInfo: [NSLocalizedDescriptionKey: "nearestSize 数据为空 x=\(x.shape) size=\(size)"])
+        }
         var out = [Float](repeating: 0, count: b * c * size)
         for bi in 0..<b {
             for ci in 0..<c {
