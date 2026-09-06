@@ -42,6 +42,7 @@ public struct S2MelInfer {
                            t: MLXArray, style: MLXArray) throws -> MLXArray {
         // x/promptX [1,80,T]；cond [1,T,512]；style [1,192]
         let B = x.shape[0], T = x.shape[2]
+        DLog.write("DiT B=\(B) T=\(T) x=\(x.shape) xInCat=\(cond.shape) t=\(t.shape)")
         let t1 = tEmb1(t)                                      // [B,512]
         // cond → 512
         var c = cond
