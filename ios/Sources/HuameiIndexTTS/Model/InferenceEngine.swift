@@ -16,6 +16,12 @@ final class InferenceEngine: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
 
     init() {
+        // 上次（可能崩溃的）运行日志尾部 → 日志面板（重启后可见，flash 前已落盘）
+        let tail = DLog.tail(40)
+        if !tail.isEmpty {
+            SystemMonitor.shared.appendLog("=== 上次运行记录（崩溃日志落盘） ===")
+            tail.forEach { SystemMonitor.shared.appendLog($0) }
+        }
         // 下载器状态变化 → 转发主对象变化（UI 观察 downloadState 刷新）+ 写入开发者日志
         downloader.$state
             .receive(on: DispatchQueue.main)
@@ -171,6 +177,8 @@ final class InferenceEngine: ObservableObject {
         }
         // 运行在后台线程，避免卡 UI
         return try await Task.detached(priority: .userInitiated) {
+            DLog.reset()                       // 清空上次记录，开始新一轮
+            DLog.write("ENGINE synthesize start")
             SystemMonitor.shared.appendLog("开始合成推理…")
             // withError：捕获 MLX 内部错误，避免 _mlx_error → fatalError 崩溃；错误可抛给 UI
             let floats = try MLX.withError {

@@ -157,6 +157,7 @@ public final class TTSPipeline {
 
         defer { unloadAll() }                       // 全路径兜底（含抛错）
 
+        DLog.write("SYNTH begin textLen=\(text.count) lang=\(langId) speaker=\(speakerRow) cfg=\(config.maxMelTokens)")
         onStage("encoding", 0.1)
         // 前缀语言：num_languages=99 → 仅 langId < 99 存在 <|lang|> 特殊 token。
         // ⚠️ ar=13 等 ≥8 的语言此前被错误回退到不存在的 <|common|>（common idx=105）→ 现查全表
@@ -202,6 +203,7 @@ public final class TTSPipeline {
             guard let infer = s2melInfer else { throw SafetensorsError.badJSON("s2mel session unloaded") }
             onStage("s2mel", 0.75)
             let targetLen = Int(Double(sInfer.shape[1]) * TTSConfig.lengthRatio * config.durationFactor)
+            DLog.write("stage s2mel sInfer=\(sInfer.shape) targetLen=\(targetLen)")
             let cond = infer.lengthRegulate(sInfer, targetLen: targetLen)   // [1,T',512]
 
             let promptLen = prompt?.refMel.shape[2] ?? 86

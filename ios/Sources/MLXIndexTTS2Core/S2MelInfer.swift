@@ -211,6 +211,7 @@ public struct S2MelInfer {
         // mu [1,T,512]（prompt 段+目标段）；prompt [1,80,P]
         let B = mu.shape[0], T = mu.shape[1]
         let promptLen = prompt.shape[2]
+        DLog.write("cfm begin mu=\(B)x\(T)x512 prompt=\(prompt.shape) steps=\(steps) cfg=\(TTSConfig.cfmCfgRate) seed=\(seed)")
         // z = randn[1,80,T]（官方随机：MLXRandom.normal，等价 torch.randn_like）
         MLXRandom.seed(seed)
         var x = MLXRandom.normal([1, 80, T])
@@ -228,6 +229,7 @@ public struct S2MelInfer {
         var xt = x
         for s in 1...steps {
             onStep?(s, steps)                  // 打点（崩溃前可知步数）
+            DLog.write("cfm step \(s)/\(steps) start")
             let dt = tSpan[s] - tSpan[s - 1]
             let tVal = MLXArray([tSpan[s - 1]], [1])
             // ⚠️ 整步包 in withError：任何 MLX 错误在此 catch → 转可读 throw 并立即退出，
@@ -254,9 +256,11 @@ public struct S2MelInfer {
                     MLX.eval(xt)               // eager：错误在 withError 内转为 throw
                 }
             } catch {
+                DLog.write("cfm step \(s)/\(steps) ERROR: \(String(describing: error))")
                 NSLog("[s2mel] cfm step %d/%d error: %@", s, steps, String(describing: error))
                 throw error
             }
+            DLog.write("cfm step \(s)/\(steps) ok")
         }
         return xt
     }
