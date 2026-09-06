@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// 合成结果播放卡
 struct ResultCard: View {
@@ -9,7 +10,7 @@ struct ResultCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Synthesis Result")
+                Text("合成结果")
                     .font(Theme.Fonts.heading)
                     .foregroundStyle(Theme.Colors.labelPrimary)
                 Spacer()
@@ -20,8 +21,10 @@ struct ResultCard: View {
                     Image(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                         .font(.system(size: 44, weight: .regular))
                         .foregroundStyle(Theme.Colors.accent)
+                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.borderless)
+                .frame(minWidth: 56, minHeight: 56)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(player.isPlaying ? "播放中…" : "点击播放")
@@ -39,7 +42,10 @@ struct ResultCard: View {
                     Image(systemName: "square.and.arrow.up")
                         .font(.system(size: 20, weight: .medium))
                         .foregroundStyle(Theme.Colors.accentSoft)
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(.borderless)
+                .frame(minWidth: 44, minHeight: 44)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
@@ -56,11 +62,18 @@ struct ResultCard: View {
         else { player.play() }
     }
 
+    /// 真正的系统分享面板（此前是空占位 → 点分享无反应）
     private func share(url: URL) {
-        // 占位：实际可接 UIActivityViewController 分享
-        #if canImport(UIKit)
-        // TODO: UI share sheet
-        _ = url
-        #endif
+        let av = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let root = scene.windows.first?.rootViewController else { return }
+        // iPad popover 必须指定锚点
+        if let pop = av.popoverPresentationController {
+            pop.sourceView = root.view
+            pop.sourceRect = CGRect(x: root.view.bounds.midX, y: root.view.bounds.midY,
+                                    width: 0, height: 0)
+            pop.permittedArrowDirections = []
+        }
+        root.present(av, animated: true)
     }
 }
