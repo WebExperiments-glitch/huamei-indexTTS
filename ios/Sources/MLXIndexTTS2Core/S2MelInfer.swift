@@ -176,7 +176,7 @@ public struct S2MelInfer {
         // sInfer [1,T,1024]
         DLog.write("LR begin sInfer=\(sInfer.shape) target=\(targetLen) dtype=\(sInfer.dtype)")
         do {
-            try MLX.withError {
+            return try MLX.withError {
                 var x = Ops.linear(sInfer, w: w.lrContentProjW, b: w.lrContentProjB)  // [1,T,512]
                 x = x.transposed(0, 2, 1)
                 DLog.write("LR proj x=\(x.shape) dtype=\(x.dtype)")
