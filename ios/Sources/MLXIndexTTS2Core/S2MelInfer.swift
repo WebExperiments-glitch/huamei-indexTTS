@@ -279,7 +279,10 @@ public struct S2MelInfer {
                     }
                     xt = xt + d * dt
                     xt = zeroPrefix(xt, count: promptLen)
-                    MLX.eval(xt)               // eager：错误在 withError 内转为 throw
+                    // eager + 回写内存：双 batch(CFG) 下 Metal 中间缓冲累积会 OOM → 每步同步+清缓存
+                    MLX.eval(xt)
+                    MLX.synchronize()
+                    MLX.Memory.clearCache()
                 }
             } catch {
                 DLog.write("cfm step \(s)/\(steps) ERROR: \(String(describing: error))")

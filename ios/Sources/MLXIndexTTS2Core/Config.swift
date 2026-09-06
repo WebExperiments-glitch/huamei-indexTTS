@@ -31,9 +31,7 @@ public enum TTSConfig {
     // S2Mel（s2mel.safetensors）
     public static let melChannels    = 80     // DiT in_channels / mel 频带
     public static let cfmSteps       = 25
-    // ⚠️ CFG=0.7 双 batch 在 iOS 触发 OOM/trap（step2 崩）；暂回 0.0（单 batch 稳定出声）
-    //    攻 CFG 内存（每步 sync/清缓存）后再开回 0.7。
-    public static let cfmCfgRate     = 0.0
+    public static let cfmCfgRate     = 0.7
     public static let ditDim         = 512
     public static let ditLayers      = 13
     public static let ditHeads       = 8
