@@ -31,8 +31,7 @@ public enum TTSConfig {
     // S2Mel（s2mel.safetensors）
     public static let melChannels    = 80     // DiT in_channels / mel 频带
     public static let cfmSteps       = 25
-    // 二分：v40 先 0.0 验证单 batch 纯业务（v37 的竞争已修）；通过后恢复 0.7
-    public static let cfmCfgRate     = 0.0
+    public static let cfmCfgRate     = 0.7
     public static let ditDim         = 512
     public static let ditLayers      = 13
     public static let ditHeads       = 8

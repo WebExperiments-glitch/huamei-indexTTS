@@ -216,17 +216,21 @@ final class InferenceEngine: ObservableObject {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let url = dir.appendingPathComponent("out-\(UUID().uuidString.prefix(8)).wav")
 
-        let fmt = AVAudioFormat(commonFormat: .pcmFormatFloat32,
+        // ⚠️ AVAudioPlayer 对 Float32 WAV 支持不可靠 → 写标准 16-bit PCM（Int16 interleaved）
+        let fmt = AVAudioFormat(commonFormat: .pcmFormatInt16,
                                 sampleRate: Double(sampleRate),
-                                channels: 1, interleaved: false)!
+                                channels: 1, interleaved: true)!
         guard let file = try? AVAudioFile(forWriting: url, settings: fmt.settings) else {
             throw NSError(domain: "WAV", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "无法创建音频文件"])
         }
         let buf = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: AVAudioFrameCount(samples.count))!
         buf.frameLength = AVAudioFrameCount(samples.count)
-        if let ch = buf.floatChannelData?[0] {
-            for (i, s) in samples.enumerated() { ch[i] = s }
+        if let ch = buf.int16ChannelData?[0] {
+            for (i, s) in samples.enumerated() {
+                let v = s.isFinite ? s : 0
+                ch[i] = Int16(clamping: Int(v * 32767.0))
+            }
         }
         try file.write(from: buf)
         return url
