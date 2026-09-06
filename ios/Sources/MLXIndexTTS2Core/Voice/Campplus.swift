@@ -103,8 +103,9 @@ public final class Campplus {
     // MARK: - 前向
 
     public func embed(_ fbank: MLXArray) throws -> MLXArray {
-        // fbank [B,T,80] → [B,80,T] → head
+        // fbank [B,T,80] → [B,80,T] → head 需 4D [B,1,80,T]（官方 head.forward 里 x.unsqueeze(1)）
         var x = fbank.transposed(0, 2, 1)
+        x = x.reshaped([x.shape[0], 1, x.shape[1], x.shape[2]])   // [B,1,H=80,W=T]
         x = reluBN2d(bn1, conv2d(x, conv1.w))
         for (stageIdx, _) in resBlocks.enumerated() {
             // stride(2,1) 作用于每 stage 第一块
