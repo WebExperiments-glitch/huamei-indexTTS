@@ -98,7 +98,7 @@ public final class BigVGAN {
     public func synthesize(mel: MLXArray) throws -> MLXArray {
         DLog.write("BigVGAN begin mel=\(mel.shape) dtype=\(mel.dtype)")
         do {
-            try MLX.withError {
+            return try MLX.withError {
                 var x = Ops.zeroPad(mel, left: 3, right: 3)
                 x = Ops.conv1d(x, w: convPreW, b: convPreB)          // [1,1536,T]
                 for stage in 0..<6 {
