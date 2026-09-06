@@ -217,8 +217,8 @@ public final class TTSPipeline {
                 promptMel = MLXArray.zeros([1, 80, promptLen])
             }
             let styleArr = MLXArray(style, [1, TTSConfig.spkDim])
-            let melFull = infer.cfm(mu: catMu, prompt: promptMel,
-                                    style: styleArr, seed: seed)
+            let melFull = try infer.cfm(mu: catMu, prompt: promptMel,
+                                        style: styleArr, seed: seed)
             // 裁掉 prompt 段
             let total = melFull.shape[2]
             mel = total > promptLen ? melFull[0..., 0..., promptLen..<total] : melFull

@@ -1,5 +1,6 @@
 import Foundation
 import MLX
+import MLXRandom
 
 /// s2mel 推理（用 S2MelWeights）+ CFM 采样（p0/s2mel_impl 移植）
 public struct S2MelInfer {
@@ -205,24 +206,15 @@ public struct S2MelInfer {
     // MARK: - CFM（欧拉 + CFG）
     public func cfm(mu: MLXArray, prompt: MLXArray, style: MLXArray,
                     steps: Int = TTSConfig.cfmSteps,
-                    seed: UInt64) -> MLXArray {
+                    seed: UInt64) throws -> MLXArray {
         // mu [1,T,512]（prompt 段+目标段）；prompt [1,80,P]
         let B = mu.shape[0], T = mu.shape[1]
         let promptLen = prompt.shape[2]
-        var rng = SplitMix64(seed: seed)
-        // z = randn[1,80,T]（标准正态；官方 torch.randn_like）
-        // ⚠️ 旧版用均匀分布 U(-1,1) 冒充高斯 → 修正为 Box-Muller
-        func randn() -> Float {
-            let u1 = max(Float.random(in: 0..<1, using: &rng), Float.leastNonzeroMagnitude)
-            let u2 = Float.random(in: 0..<1, using: &rng)
-            return (-2 * log(u1)).squareRoot() * cos(Float.pi * 2 * u2)
-        }
-        var xF = [Float](repeating: 0, count: 80 * T)
-        for i in 0..<xF.count { xF[i] = randn() }
-        var x = MLXArray(xF, [1, 80, T])
-        let z = x
+        // z = randn[1,80,T]（官方随机：MLXRandom.normal，等价 torch.randn_like）
+        MLXRandom.seed(seed)
+        var x = MLXRandom.normal([1, 80, T])
         var promptX = MLXArray.zeros([1, 80, T])
-        // prompt 区锚定：prompt(P) 左对齐 + 零填充（MLX 原生，替换手写 copySlice CPU 循环）
+        // prompt 区锚定：prompt(P) 左对齐 + 零填充（MLX 原生）
         if promptLen > 0 && promptLen <= T {
             let padZ = MLXArray.zeros([1, 80, T - promptLen]).asType(prompt.dtype)
             promptX = MLX.concatenated([prompt[0..., 0..., 0..<promptLen], padZ], axis: 2)
@@ -256,21 +248,24 @@ public struct S2MelInfer {
                 xt = xt + d * dt
             }
             xt = zeroPrefix(xt, count: promptLen)
+            // ⚠️ 每步 eager 求值：把任何 MLX 形状/广播/dtype 错误在此转成可读 throw，
+            //    （withError 空结果的 Swift trap 是此前 EXC_BREAKPOINT 崩溃的本质）
+            do {
+                try MLX.withError { MLX.eval(xt) }
+            } catch {
+                NSLog("[s2mel] cfm step %d/%d MLX error: %@", s, steps, error.localizedDescription)
+                throw error
+            }
         }
-        _ = z
         return xt
     }
 
     private func zeroPrefix(_ x: MLXArray, count: Int) -> MLXArray {
-        let (b, c, t) = (x.shape[0], x.shape[1], x.shape[2])
-        var f = x.asFloatArray()
-        for bi in 0..<b {
-            for ci in 0..<c {
-                for ti in 0..<min(count, t) {
-                    f[(bi * c + ci) * t + ti] = 0
-                }
-            }
-        }
-        return MLXArray(f, [b, c, t])
+        // 前 count 帧置零（MLX 原生，避免手写 CPU 循环/越界）
+        let t = x.shape[2]
+        guard count > 0, count < t else { return x }
+        let zeroPart = x[0..., 0..., 0..<count] * 0
+        let rest = x[0..., 0..., count..<t]
+        return MLX.concatenated([zeroPart, rest], axis: 2)
     }
 }
