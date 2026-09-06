@@ -110,8 +110,8 @@ struct AudioSourceSheet: View {
             .padding(.vertical, 12)
             .opacity(disabled ? 0.5 : 1)
         }
-        .buttonStyle(.plain)
-        .glassCard(cornerRadius: 16)
+        .buttonStyle(.borderless)
+        .glassCard(cornerRadius: 16, interactive: false)
         .disabled(disabled)
     }
 

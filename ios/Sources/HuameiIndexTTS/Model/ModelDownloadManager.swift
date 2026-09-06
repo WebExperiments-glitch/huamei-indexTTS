@@ -11,11 +11,22 @@ struct ModelManifest: Codable {
         let size: Int
         let sha256: String
         var id: String { path }
+
+        init(path: String, group: String, size: Int, sha256: String) {
+            self.path = path; self.group = group; self.size = size; self.sha256 = sha256
+        }
     }
     let modelscope: String
     let baseURL: String
     let totalBytes: Int
     let files: [Entry]
+
+    init(modelscope: String, baseURL: String, totalBytes: Int, files: [Entry]) {
+        self.modelscope = modelscope
+        self.baseURL = baseURL
+        self.totalBytes = totalBytes
+        self.files = files
+    }
 }
 
 // MARK: - 傻瓜式模型下载器
@@ -54,12 +65,31 @@ final class ModelDownloadManager: ObservableObject {
             SystemMonitor.shared.appendLog("清单：文件读取失败 \(url.path)")
             return nil
         }
-        do {
-            return try JSONDecoder().decode(ModelManifest.self, from: data)
-        } catch {
-            SystemMonitor.shared.appendLog("清单：解码失败 \(error.localizedDescription)")
+        // 用 JSONSerialization 手动解析，绕开 Codable 在部分环境下报"数据丢失"的问题
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            SystemMonitor.shared.appendLog("清单：JSON 解析失败")
             return nil
         }
+        guard let base = obj["base_url"] as? String,
+              let total = obj["total_bytes"] as? Int,
+              let rawFiles = obj["files"] as? [[String: Any]] else {
+            SystemMonitor.shared.appendLog("清单：字段缺失（base_url/total_bytes/files）")
+            return nil
+        }
+        var entries: [ModelManifest.Entry] = []
+        for f in rawFiles {
+            guard let path = f["path"] as? String,
+                  let group = f["group"] as? String,
+                  let size = f["size"] as? Int,
+                  let sha = f["sha256"] as? String else { continue }
+            entries.append(ModelManifest.Entry(path: path, group: group, size: size, sha256: sha))
+        }
+        guard !entries.isEmpty else {
+            SystemMonitor.shared.appendLog("清单：无有效文件条目")
+            return nil
+        }
+        return ModelManifest(modelscope: obj["modelscope"] as? String ?? "",
+                             baseURL: base, totalBytes: total, files: entries)
     }
 
     /// 指定组是否已就位

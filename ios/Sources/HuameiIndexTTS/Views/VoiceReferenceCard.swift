@@ -27,7 +27,7 @@ struct VoiceReferenceCard: View {
                                              : Theme.Colors.accentStrong)
                     }
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(s.referenceURL?.lastPathComponent ?? "Add a reference voice")
+                        Text(s.referenceURL?.lastPathComponent ?? "添加参考声音")
                             .font(Theme.Fonts.callout)
                             .foregroundStyle(Theme.Colors.labelPrimary)
                             .lineLimit(1)
@@ -45,8 +45,8 @@ struct VoiceReferenceCard: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 14)
             }
-            .buttonStyle(.plain)
-            .glassCard(cornerRadius: 18)
+            .buttonStyle(.borderless)
+            .glassCard(cornerRadius: 18, interactive: false)
         }
     }
 }
