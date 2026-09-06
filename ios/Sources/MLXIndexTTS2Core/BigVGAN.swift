@@ -102,7 +102,8 @@ public final class BigVGAN {
         for i in 0..<(b * c * t) {
             for r in 0..<times { out[i * times + r] = f[i] }
         }
-        return MLXArray(out, [b, c, t * times])
+        // 保持输入 dtype（CPU 兜底强转 F32 取数，构造后转回）
+        return MLXArray(out, [b, c, t * times]).asType(x.dtype)
     }
 
     /// mel [1,80,T] → wav [1,1, T*256]

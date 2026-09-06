@@ -68,8 +68,13 @@ enum Ops {
     // MARK: - 线性
 
     static func linear(_ x: MLXArray, w: MLXArray, b: MLXArray?) -> MLXArray {
-        var out = matmul(x, w.T)
-        if let b { out = out + b }
+        // dtype 对齐：真实权重重为 F16/量化，输入可能为 F32（rand/CPU 兜底）→ MLX matmul 要求同 dtype
+        let xw = x.dtype == w.dtype ? x : x.asType(w.dtype)
+        var out = matmul(xw, w.T)
+        if let b {
+            let bb = b.dtype == out.dtype ? b : b.asType(out.dtype)
+            out = out + bb
+        }
         return out
     }
 
@@ -91,22 +96,39 @@ enum Ops {
 
     // MARK: - 卷积
 
-    /// conv1d：x [B,C,T]；w (out,k,in)；输出 [B,out,T]（stride 1，padding 由调用方预填）
-    /// groups：depthwise 卷积（in==1 每通道独立）时传 C（=out），否则默认 1
+    /// conv1d：x [B,C,T]（channels-first 内部语义）；w [out,k,in]。
+    /// ⚠️ 真实权重核对（models/mlx-indextts2-2.5-8bit/*.safetensors）：
+    ///   全部 conv 权重即 MLX 原生布局 (C_out,K,C_in) —— 如 dwconv [384,7,1]、
+    ///   out_project [1024,1,8]、depthwise [512,15,1] —— **不能再转置**！
+    /// MLX 的 conv1d 是 channels-last：input (N,L,C_in)、weight (C_out,K,C_in)、output (N,L,C_out)。
+    /// 此前崩溃「input (1,8,41) vs weight (1024,1,8)」即 input 布局错误：
+    /// input 实为 (N=1,L=8,C=41) 与权重 C_in=8 不匹配 → 修复 = 输入/输出做布局翻转，权重原样。
+    /// 输出 [B,out,T]；groups：depthwise（in==1）传 C。
     static func conv1d(_ x: MLXArray, w: MLXArray, b: MLXArray?,
                        dilation: Int = 1, groups: Int = 1) -> MLXArray {
-        var out = MLX.conv1d(x, w, stride: 1, padding: 0, dilation: dilation, groups: groups)
-        if let b { out = out + b.reshaped([1, -1, 1]) }
-        return out
+        // dtype 对齐：权重 F16，输入可能 F32（rand 初始化/CPU 兜底）→ MLX conv 要求同 dtype
+        let xw = x.dtype == w.dtype ? x : x.asType(w.dtype)
+        let xt = xw.transposed(0, 2, 1)                        // [B,T,C]
+        var out = MLX.conv1d(xt, w, stride: 1, padding: 0,
+                             dilation: dilation, groups: groups)  // [B,T',out]
+        if let b {
+            let bb = b.dtype == out.dtype ? b : b.asType(out.dtype)
+            out = out + bb.reshaped([1, 1, -1])
+        }
+        return out.transposed(0, 2, 1)                        // [B,out,T']
     }
 
     /// 零 pad（尾轴）
     static func zeroPad(_ x: MLXArray, left: Int, right: Int) -> MLXArray {
         guard left > 0 || right > 0 else { return x }
         let (b, c, _) = (x.shape[0], x.shape[1], x.shape[2])
+        func zeros(_ n: Int) -> MLXArray {
+            // 与 x 同 dtype，避免 F16/F32 混合拼接
+            MLXArray.zeros([b, c, n]).asType(x.dtype)
+        }
         var out = x
-        if left > 0 { out = MLX.concatenated([MLXArray.zeros([b, c, left]), out], axis: 2) }
-        if right > 0 { out = MLX.concatenated([out, MLXArray.zeros([b, c, right])], axis: 2) }
+        if left > 0 { out = MLX.concatenated([zeros(left), out], axis: 2) }
+        if right > 0 { out = MLX.concatenated([out, zeros(right)], axis: 2) }
         return out
     }
 
@@ -128,7 +150,8 @@ enum Ops {
         }
         if left > 0 { out = MLX.concatenated([reversedSlice(0..<left), out], axis: 2) }
         if right > 0 { out = MLX.concatenated([out, reversedSlice((t - right)..<t)], axis: 2) }
-        return out
+        // reversedSlice 经 CPU F32 兜底后转回原 dtype
+        return out.asType(x.dtype)
     }
 
     // MARK: - 杂项

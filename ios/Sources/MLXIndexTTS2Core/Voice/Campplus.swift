@@ -152,8 +152,11 @@ public final class Campplus {
     private func relu(_ x: MLXArray) -> MLXArray { MLX.maximum(x, 0) }
 
     private func conv2d(_ x: MLXArray, _ w: MLXArray) -> MLXArray {
-        // x [N,C,H,W] w [O,Kh,Kw,I]；mlx 单值 stride → 恒 1，下采样在调用端做（downsampleH）
-        MLX.conv2d(x, w, stride: 1, padding: 1)
+        // x [N,C,H,W] w [O,Kh,Kw,I]；mlx conv2d 为 channels-last：input (N,H,W,C_in)、output (N,H,W,O)。
+        // 固定 stride 1（下采样在调用端 downsampleH 做）
+        let xt = x.transposed(0, 2, 3, 1)                       // [N,H,W,C]
+        let o = MLX.conv2d(xt, w, stride: 1, padding: 1)         // [N,H,W,O]
+        return o.transposed(0, 3, 1, 2)                          // [N,O,H,W]
     }
 
     /// 等效 stride(2,1)：H 维隔行取样（reshape 分块取偶，零新 API）
@@ -175,7 +178,10 @@ public final class Campplus {
             inp = MLX.concatenated([MLXArray.zeros([B, C, pad]), inp], axis: 2)
             inp = MLX.concatenated([inp, MLXArray.zeros([B, C, pad])], axis: 2)
         }
-        return MLX.conv1d(inp, w, stride: stride, padding: 0, dilation: dil)
+        // channels-first [B,C,T] → channels-last [B,T,C]（mlx conv1d 布局，权重 [O,K,I] 原样）
+        let xt = inp.transposed(0, 2, 1)
+        let o = MLX.conv1d(xt, w, stride: stride, padding: 0, dilation: dil)  // [B,T',O]
+        return o.transposed(0, 2, 1)                            // [B,O,T']
     }
 
     private func res(_ x: MLXArray, r: (b1: MLXArray, bn1: BatchNorm2d, b2: MLXArray,
@@ -268,10 +274,9 @@ struct CAMDenseLayer {
     }
 
     private func conv1x1(_ x: MLXArray, w: MLXArray) -> MLXArray {
-        let B = x.shape[0], C = x.shape[1]
-        let out = MLX.conv1d(x, w, stride: 1, padding: 0, dilation: 1)
-        _ = (B, C)
-        return out
+        let xt = x.transposed(0, 2, 1)                          // [B,T,C]
+        let o = MLX.conv1d(xt, w, stride: 1, padding: 0, dilation: 1)  // [B,T,out]
+        return o.transposed(0, 2, 1)                            // [B,out,T]
     }
 
     private func camLocal(_ x: MLXArray) -> MLXArray {
@@ -283,7 +288,9 @@ struct CAMDenseLayer {
             inp = MLX.concatenated([MLXArray.zeros([B, C, pad]), inp], axis: 2)
             inp = MLX.concatenated([inp, MLXArray.zeros([B, C, pad])], axis: 2)
         }
-        return MLX.conv1d(inp, camLocalW, stride: 1, padding: 0, dilation: dil)
+        let xt = inp.transposed(0, 2, 1)
+        let o = MLX.conv1d(xt, camLocalW, stride: 1, padding: 0, dilation: dil)
+        return o.transposed(0, 2, 1)
     }
 
     private func attention(_ x: MLXArray) -> MLXArray {
@@ -292,9 +299,10 @@ struct CAMDenseLayer {
         let globalMean = x.mean(axis: -1, keepDims: true)          // [B,bn,1]
         let seg = segPooling(x)                                    // [B,bn,1]
         var ctx = globalMean + seg
-        ctx = MLX.conv1d(ctx, camL1W, stride: 1, padding: 0, dilation: 1) + camL1B.reshaped([1, -1, 1])  // bn→bn/2
+        // 1x1 conv：channels-last 翻转后运算再翻回 [B,C,1]
+        ctx = conv1x1(ctx, w: camL1W) + camL1B.reshaped([1, -1, 1])  // bn→bn/2
         ctx = MLX.maximum(ctx, 0)
-        ctx = MLX.conv1d(ctx, camL2W, stride: 1, padding: 0, dilation: 1) + camL2B.reshaped([1, -1, 1])  // →out
+        ctx = conv1x1(ctx, w: camL2W) + camL2B.reshaped([1, -1, 1])  // →out
         let gate = 1 / (1 + MLX.exp(-ctx))                          // sigmoid [B,out,1]
         // 广播到时间维
         // gate [B,out,1] 广播到时间维：reshape + 乘法广播（mlx 无 public broadcast）

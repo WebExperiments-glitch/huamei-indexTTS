@@ -121,6 +121,7 @@ public final class SemanticCodecDecoder {
         guard floats.count == b * c * t, t > 0 else { return x }
         var out = [Float](repeating: 0, count: b * c * t * 2)
         for i in 0..<floats.count { out[i * 2] = floats[i]; out[i * 2 + 1] = floats[i] }
-        return MLXArray(out, [b, c, t * 2])
+        // 保持输入 dtype（CPU 兜底强转 F32 取数，构造后转回）
+        return MLXArray(out, [b, c, t * 2]).asType(x.dtype)
     }
 }

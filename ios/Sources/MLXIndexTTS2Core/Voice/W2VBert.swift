@@ -189,7 +189,8 @@ public final class W2VBert {
         let B = h.shape[0], T = h.shape[1], D = h.shape[2]
         var ct = h.transposed(0, 2, 1)                                    // [B,D,T]
         ct = Ops.reflectPad(ct, left: 15, right: 15)
-        ct = Ops.conv1d(ct, w: b.dwW, b: nil, dilation: 1)
+        // depthwise：dwconv 权重 [D,31,1]（out=in=D, in/group=1）→ groups=D 才能每通道独立卷积
+        ct = Ops.conv1d(ct, w: b.dwW, b: nil, dilation: 1, groups: b.dwW.shape[0])
         // depthwise_layer_norm：对通道维归一化（GroupNorm(1) 语义）
         ct = Ops.layerNorm(ct, weight: b.dwLNw.reshaped([1, D, 1]),
                            bias: b.dwLNb.reshaped([1, D, 1]), eps: 1e-5)
