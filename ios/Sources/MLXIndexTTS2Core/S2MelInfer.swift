@@ -205,8 +205,7 @@ public struct S2MelInfer {
     // MARK: - CFM（欧拉 + CFG）
     public func cfm(mu: MLXArray, prompt: MLXArray, style: MLXArray,
                     steps: Int = TTSConfig.cfmSteps,
-                    seed: UInt64,
-                    onStep: ((Int, Int) -> Void)? = nil) -> MLXArray {
+                    seed: UInt64) -> MLXArray {
         // mu [1,T,512]（prompt 段+目标段）；prompt [1,80,P]
         let B = mu.shape[0], T = mu.shape[1]
         let promptLen = prompt.shape[2]
@@ -254,7 +253,6 @@ public struct S2MelInfer {
                 xt = xt + d * dt
             }
             xt = zeroPrefix(xt, count: promptLen)
-            onStep?(s, steps)          // 打点：崩在此步前说明前 s 步完成
         }
         _ = z
         return xt
