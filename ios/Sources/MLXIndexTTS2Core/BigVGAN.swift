@@ -95,13 +95,11 @@ public final class BigVGAN {
     }
 
     private func nearest(_ x: MLXArray, times: Int) -> MLXArray {
+        // 纯 MLX 最近邻上采样：无 CPU 数组拷贝（asFloatArray 对 F16 会断言崩溃）
         let (b, c, t) = (x.shape[0], x.shape[1], x.shape[2])
-        let f = x.asFloatArray()
-        var out = [Float](repeating: 0, count: b * c * t * times)
-        for i in 0..<(b * c * t) {
-            for r in 0..<times { out[i * times + r] = f[i] }
-        }
-        return MLXArray(out, [b, c, t * times])
+        let e = x.reshaped([b, c, t, 1])
+        let cc = MLX.concatenated([MLXArray](repeating: e, count: times), axis: 3)
+        return cc.reshaped([b, c, t * times])
     }
 
     /// mel [1,80,T] → wav [1,1, T*256]

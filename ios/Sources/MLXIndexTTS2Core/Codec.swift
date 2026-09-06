@@ -111,12 +111,11 @@ public final class SemanticCodecDecoder {
     }
 
     private func nearest2x(_ x: MLXArray) -> MLXArray {
-        // [B,C,T] → 每元素重复（nearest ×2）
+        // 纯 MLX 最近邻 ×2：无 CPU 数组拷贝（asFloatArray 对 F16 会断言崩溃）
         let shape = x.shape
         let (b, c, t) = (shape[0], shape[1], shape[2])
-        var floats = x.asFloatArray()
-        var out = [Float](repeating: 0, count: b * c * t * 2)
-        for i in 0..<floats.count { out[i * 2] = floats[i]; out[i * 2 + 1] = floats[i] }
-        return MLXArray(out, [b, c, t * 2])
+        let e = x.reshaped([b, c, t, 1])
+        let cc = MLX.concatenated([e, e], axis: 3)   // [b,c,t,2]
+        return cc.reshaped([b, c, t * 2])
     }
 }
