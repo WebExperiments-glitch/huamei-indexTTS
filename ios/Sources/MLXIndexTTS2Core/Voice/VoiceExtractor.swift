@@ -147,7 +147,7 @@ public final class VoiceExtractor {
             let w = try S2Mel(path: paths.s2mel)
             s2mel = S2MelInfer(weights: w)
         }
-        let prompt = s2mel!.lengthRegulate(h, targetLen: P) // [1,P,512]
+        let prompt = try s2mel!.lengthRegulate(h, targetLen: P) // [1,P,512]
         let arr = prompt[0..., 0...].reshaped([-1]).asFloatArray()
         return (arr, P)
     }
