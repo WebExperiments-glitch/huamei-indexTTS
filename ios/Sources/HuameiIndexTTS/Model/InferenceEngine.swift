@@ -170,19 +170,24 @@ final class InferenceEngine: ObservableObject {
         }
         // 运行在后台线程，避免卡 UI
         return try await Task.detached(priority: .userInitiated) {
-            let floats = try pipe.synthesize(
-                text: text,
-                langId: languageId,
-                speakerRow: speakerRow,
-                emoWeight: emotionWeight,
-                config: config,
-                seed: seed,
-                prompt: nil,            // TODO: 从模型目录加载 A1 条件束（见 README）
-                onStage: { stage, frac in
-                    Task { @MainActor in onProgress(stage, frac) }
-                }
-            )
+            SystemMonitor.shared.appendLog("开始合成推理…")
+            // withError：捕获 MLX 内部错误，避免 _mlx_error → fatalError 崩溃；错误可抛给 UI
+            let floats = try MLX.withError {
+                try pipe.synthesize(
+                    text: text,
+                    langId: languageId,
+                    speakerRow: speakerRow,
+                    emoWeight: emotionWeight,
+                    config: config,
+                    seed: seed,
+                    prompt: nil,            // TODO: 从模型目录加载 A1 条件束（见 README）
+                    onStage: { stage, frac in
+                        Task { @MainActor in onProgress(stage, frac) }
+                    }
+                )
+            }
             let url = try Self.writeWav(floats, sampleRate: TTSConfig.sampleRate)
+            SystemMonitor.shared.appendLog("合成完成，已生成音频")
             return url
         }.value
     }

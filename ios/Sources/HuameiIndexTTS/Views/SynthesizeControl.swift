@@ -147,10 +147,12 @@ struct SynthesizeControl: View {
         } catch is CancellationError {
             await MainActor.run { s.phase = .idle; s.progress = 0 }
         } catch {
+            let msg = error.localizedDescription
             await MainActor.run {
                 s.phase = .failed
-                s.lastError = error.localizedDescription
+                s.lastError = msg
             }
+            SystemMonitor.shared.appendLog("合成失败：\(msg)")
         }
     }
 

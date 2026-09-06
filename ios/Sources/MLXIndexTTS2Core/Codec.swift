@@ -95,15 +95,19 @@ public final class SemanticCodecDecoder {
         x = x.reshaped([1, 8, T])
         // 权重为 F16：输入必须转成同等 dtype（F32 输入 + F16 权重在 MLX conv1d 断言崩溃）
         x = x.asType(outProjW.dtype)
-        var q = Ops.conv1d(x, w: outProjW, b: outProjB)     // [1,1024,T]
-        // decoder
-        var feat = vocosBackbone(q)                          // [1,T,384]
-        feat = Ops.linear(feat, w: headW, b: headB)          // [1,T,1024]
-        // ×2 nearest → up conv
-        feat = feat.transposed(0, 2, 1)                      // [1,1024,T]
-        feat = nearest2x(feat)                               // [1,1024,2T]
-        let out = Ops.conv1d(feat, w: upW, b: upB)           // [1,1024,2T]
-        return out.transposed(0, 2, 1)                       // [1,2T,1024]
+        // 用 withError 捕获 MLX 内部错误：否则 _mlx_error 走 fatalError 直接崩溃，
+        // 且拿不到真实原因。包裹后错误可抛给上层，日志能显示 MLX 的具体报错。
+        return try MLX.withError {
+            var q = Ops.conv1d(x, w: outProjW, b: outProjB)     // [1,1024,T]
+            // decoder
+            var feat = vocosBackbone(q)                          // [1,T,384]
+            feat = Ops.linear(feat, w: headW, b: headB)          // [1,T,1024]
+            // ×2 nearest → up conv
+            feat = feat.transposed(0, 2, 1)                      // [1,1024,T]
+            feat = nearest2x(feat)                               // [1,1024,2T]
+            let out = Ops.conv1d(feat, w: upW, b: upB)           // [1,1024,2T]
+            return out.transposed(0, 2, 1)                       // [1,2T,1024]
+        }
     }
 
     private func nearest2x(_ x: MLXArray) -> MLXArray {
