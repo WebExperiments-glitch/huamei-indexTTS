@@ -228,12 +228,18 @@ public final class W2VBert {
     /// 前向：返回 hiddenStates[i] 输出。targetIndex=17 → 与官方 hidden_states[17] 对齐（0=投影后, 1..24=各层后）
     public func hiddenState(_ features: MLXArray, targetIndex: Int = 17) throws -> MLXArray {
         // features [B,T,160]
-        var h = featureProjection(features)
-        if targetIndex == 0 { return h }
-        for i in 0..<cfg.layers {
-            h = block(h, b: blocks[i])
-            if targetIndex == i + 1 { return h }
+        DLog.write("W2V hiddenState in=\(features.shape) target=\(targetIndex)")
+        return try MLX.withError {
+            var h = featureProjection(features)
+            if targetIndex == 0 { return h }
+            for i in 0..<cfg.layers {
+                h = block(h, b: blocks[i])
+                if targetIndex == i + 1 {
+                    DLog.write("W2V hiddenState out=\(h.shape) layer=\(i + 1)")
+                    return h
+                }
+            }
+            throw SafetensorsError.missing("layer \(targetIndex) out of range")
         }
-        throw SafetensorsError.missing("layer \(targetIndex) out of range")
     }
 }

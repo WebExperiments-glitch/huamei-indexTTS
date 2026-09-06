@@ -103,60 +103,71 @@ public final class Campplus {
     // MARK: - 前向
 
     public func embed(_ fbank: MLXArray) throws -> MLXArray {
-        // fbank [B,T,80] → [B,80,T] → head 需 4D [B,1,80,T]（官方 head.forward 里 x.unsqueeze(1)）
-        var x = fbank.transposed(0, 2, 1)
-        x = x.reshaped([x.shape[0], 1, x.shape[1], x.shape[2]])   // [B,1,H=80,W=T]
-        x = reluBN2d(bn1, conv2d(x, conv1.w))
-        for (stageIdx, _) in resBlocks.enumerated() {
-            // stride(2,1) 作用于每 stage 第一块
-            let first = stageIdx % 2 == 0
-            x = res(x, r: resBlocks[stageIdx], stride2: first)
-        }
-        x = reluBN2d(bn2, downsampleH(conv2d(x, conv2.w)))
-        // reshape [B, C*H, W] → 320
-        let (B, C, H, W) = (x.shape[0], x.shape[1], x.shape[2], x.shape[3])
-        x = x.reshaped([B, C * H, W])
-
-        // xvector
-        x = conv1dPadded(x, w: tdnn0.w, dil: 1, pad: 2, stride: 2)   // 128
-        x = tdnn0.bn.run(x)
-        x = relu(x)
-        for bi in 0..<blocks.count {
-            for layer in blocks[bi].layers {
-                let y = layer.forward(x)
-                x = MLX.concatenated([x, y], axis: 1)
+        return try MLX.withError {
+            // fbank [B,T,80] → [B,80,T] → head 需 4D [B,1,80,T]（官方 head.forward 里 x.unsqueeze(1)）
+            var x = fbank.transposed(0, 2, 1)
+            x = x.reshaped([x.shape[0], 1, x.shape[1], x.shape[2]])   // [B,1,H=80,W=T]
+            DLog.write("CAMP embed fbank=\(fbank.shape) x=\(x.shape) conv1.w=\(conv1.w.shape)")
+            x = reluBN2d(bn1, conv2d(x, conv1.w, padding: 1))
+            DLog.write("CAMP head.conv1 out=\(x.shape)")
+            for (stageIdx, _) in resBlocks.enumerated() {
+                // stride(2,1) 作用于每 stage 第一块
+                let first = stageIdx % 2 == 0
+                x = res(x, r: resBlocks[stageIdx], stride2: first)
             }
-            x = transits[bi].bn.run(x)
-            x = relu(x)
-            x = conv1dPadded(x, w: transits[bi].w, dil: 1, pad: 0, stride: 1)
-        }
-        x = outBN.run(x)
-        x = relu(x)
-        // stats pooling: [B,C,T] → mean/std → [B,2C]
-        let meanX = x.mean(axis: 2)
-        let tN = Float(x.shape[2])
-        // 无偏 std（除以 T-1）
-        let centered = (x - x.mean(axis: 2, keepDims: true))
-        let sq = (centered * centered).sum(axis: 2)
-        let stdX = MLX.sqrt(sq / (tN - 1))
-        x = MLX.concatenated([meanX, stdX], axis: 1)                 // [B,1024]
+            DLog.write("CAMP head resBlocks out=\(x.shape)")
+            x = reluBN2d(bn2, downsampleH(conv2d(x, conv2.w, padding: 1)))
+            DLog.write("CAMP head.conv2 out=\(x.shape)")
+            // reshape [B, C*H, W] → 320
+            let (B, C, H, W) = (x.shape[0], x.shape[1], x.shape[2], x.shape[3])
+            x = x.reshaped([B, C * H, W])
+            DLog.write("CAMP head reshape out=\(x.shape)")
 
-        // dense 1x1 → [B,1024,1] → [B,192,1] → squeeze
-        x = conv1dPadded(x.reshaped([B, 1024, 1]), w: denseW, dil: 1, pad: 0, stride: 1)
-        x = x[0..., 0..., 0...].reshaped([B, 192])
-        x = denseBN.run(x)
-        return x
+            // xvector
+            x = conv1dPadded(x, w: tdnn0.w, dil: 1, pad: 2, stride: 2)   // 128
+            x = tdnn0.bn.run(x)
+            x = relu(x)
+            DLog.write("CAMP tdnn out=\(x.shape)")
+            for bi in 0..<blocks.count {
+                for layer in blocks[bi].layers {
+                    let y = layer.forward(x)
+                    x = MLX.concatenated([x, y], axis: 1)
+                }
+                x = transits[bi].bn.run(x)
+                x = relu(x)
+                x = conv1dPadded(x, w: transits[bi].w, dil: 1, pad: 0, stride: 1)
+            }
+            x = outBN.run(x)
+            x = relu(x)
+            DLog.write("CAMP xvector out=\(x.shape)")
+            // stats pooling: [B,C,T] → mean/std → [B,2C]
+            let meanX = x.mean(axis: 2)
+            let tN = Float(x.shape[2])
+            // 无偏 std（除以 T-1）
+            let centered = (x - x.mean(axis: 2, keepDims: true))
+            let sq = (centered * centered).sum(axis: 2)
+            let stdX = MLX.sqrt(sq / (tN - 1))
+            x = MLX.concatenated([meanX, stdX], axis: 1)                 // [B,1024]
+
+            // dense 1x1 → [B,1024,1] → [B,192,1] → squeeze
+            x = conv1dPadded(x.reshaped([B, 1024, 1]), w: denseW, dil: 1, pad: 0, stride: 1)
+            x = x[0..., 0..., 0...].reshaped([B, 192])
+            x = denseBN.run(x)
+            DLog.write("CAMP dense out=\(x.shape)")
+            return x
+        }
     }
 
     // MARK: - 算子
 
     private func relu(_ x: MLXArray) -> MLXArray { MLX.maximum(x, 0) }
 
-    private func conv2d(_ x: MLXArray, _ w: MLXArray) -> MLXArray {
+    /// 2D conv：x [N,C,H,W] → channels-last → conv → 翻回 [N,O,H,W]。
+    /// ⚠️ padding 按 kernel 传：主分支 k3 用 1；shortcut 是 1×1（官方 padding=0），不能统一写死 1。
+    private func conv2d(_ x: MLXArray, _ w: MLXArray, padding: Int = 1) -> MLXArray {
         // x [N,C,H,W] w [O,Kh,Kw,I]；mlx conv2d 为 channels-last：input (N,H,W,C_in)、output (N,H,W,O)。
-        // 固定 stride 1（下采样在调用端 downsampleH 做）
         let xt = x.transposed(0, 2, 3, 1)                       // [N,H,W,C]
-        let o = MLX.conv2d(xt, w, stride: 1, padding: 1)         // [N,H,W,O]
+        let o = MLX.conv2d(xt, w, stride: 1, padding: padding)  // [N,H,W,O]
         return o.transposed(0, 3, 1, 2)                          // [N,O,H,W]
     }
 
@@ -188,11 +199,12 @@ public final class Campplus {
     private func res(_ x: MLXArray, r: (b1: MLXArray, bn1: BatchNorm2d, b2: MLXArray,
                                         bn2: BatchNorm2d, sc: MLXArray?, scbn: BatchNorm2d?),
                      stride2: Bool) -> MLXArray {
-        var out = reluBN2d(r.bn1, stride2 ? downsampleH(conv2d(x, r.b1)) : conv2d(x, r.b1))
-        out = r.bn2.run(conv2d(out, r.b2))
+        // ⚠️ shortcut 是 1×1 卷积（官方 layers.py: k=1, stride=(s,1), padding=0）——不能用 k3 的 padding=1
+        var out = reluBN2d(r.bn1, stride2 ? downsampleH(conv2d(x, r.b1, padding: 1)) : conv2d(x, r.b1, padding: 1))
+        out = r.bn2.run(conv2d(out, r.b2, padding: 1))
         var sc = x
         if let sw = r.sc {
-            sc = stride2 ? downsampleH(conv2d(x, sw)) : conv2d(x, sw)
+            sc = stride2 ? downsampleH(conv2d(x, sw, padding: 0)) : conv2d(x, sw, padding: 0)
             sc = (r.scbn)!.run(sc)
         }
         return relu(out + sc)
