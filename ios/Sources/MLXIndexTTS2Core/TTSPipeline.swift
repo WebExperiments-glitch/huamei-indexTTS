@@ -208,11 +208,11 @@ public final class TTSPipeline {
             let catMu: MLXArray
             let promptMel: MLXArray
             if let pb = prompt {
-                catMu = MLX.concatenated([pb.promptCondition, cond], axis: 1)
+                catMu = MLX.concatenated([pb.promptCondition.asType(cond.dtype), cond], axis: 1)
                 promptMel = pb.refMel
             } else {
                 // 零占位 prompt（管线验证路径）
-                let zeros = MLXArray.zeros([1, promptLen, 512])
+                let zeros = MLXArray.zeros([1, promptLen, 512]).asType(cond.dtype)   // ⚠️ 与 cond 同 dtype
                 catMu = MLX.concatenated([zeros, cond], axis: 1)
                 promptMel = MLXArray.zeros([1, 80, promptLen])
             }

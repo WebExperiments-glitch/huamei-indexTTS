@@ -68,14 +68,15 @@ enum Ops {
     // MARK: - 线性
 
     static func linear(_ x: MLXArray, w: MLXArray, b: MLXArray?) -> MLXArray {
-        // dtype 对齐：真实权重重为 F16/量化，输入可能为 F32（rand/CPU 兜底）→ MLX matmul 要求同 dtype
+        // 计算用权重 dtype（F16/量化），输出还原输入 dtype，避免下游 F32/F16 拼接崩溃
+        let xd = x.dtype
         let xw = x.dtype == w.dtype ? x : x.asType(w.dtype)
         var out = matmul(xw, w.T)
         if let b {
             let bb = b.dtype == out.dtype ? b : b.asType(out.dtype)
             out = out + bb
         }
-        return out
+        return out.dtype == xd ? out : out.asType(xd)
     }
 
     /// 量化 Linear（affine, group 64, 8bit）
@@ -107,7 +108,8 @@ enum Ops {
     static func conv1d(_ x: MLXArray, w: MLXArray, b: MLXArray?,
                        dilation: Int = 1, groups: Int = 1,
                        padding: Int = 0, stride: Int = 1) -> MLXArray {
-        // dtype 对齐：权重 F16，输入可能 F32（rand 初始化/CPU 兜底）→ MLX conv 要求同 dtype
+        // 计算用权重 dtype，输出还原输入 dtype（避免下游 F32/F16 拼接崩溃）
+        let xd = x.dtype
         let xw = x.dtype == w.dtype ? x : x.asType(w.dtype)
         let xt = xw.transposed(0, 2, 1)                        // [B,T,C]
         var out = MLX.conv1d(xt, w, stride: stride, padding: padding,
@@ -116,7 +118,8 @@ enum Ops {
             let bb = b.dtype == out.dtype ? b : b.asType(out.dtype)
             out = out + bb.reshaped([1, 1, -1])
         }
-        return out.transposed(0, 2, 1)                        // [B,out,T']
+        out = out.transposed(0, 2, 1)                        // [B,out,T']
+        return out.dtype == xd ? out : out.asType(xd)
     }
 
     /// 零 pad（尾轴）

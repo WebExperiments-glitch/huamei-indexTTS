@@ -44,11 +44,12 @@ public struct S2MelInfer {
         c = Ops.linear(c, w: w.condProjW, b: w.condProjB)                // [1,T,512]
         let xt = x.transposed(0, 2, 1)                                   // [1,T,80]
         let pxt = promptX.transposed(0, 2, 1)
-        // cat [x,prompt,cond(512),style(192)] = 864
+        // cat [x,prompt,cond(512),style(192)] = 864（⚠️ 全部统一 xIn 的 dtype 再拼接）
         var xIn = MLX.concatenated([xt, pxt], axis: 2)
-        xIn = MLX.concatenated([xIn, c], axis: 2)
+        let cT = c.dtype == xIn.dtype ? c : c.asType(xIn.dtype)
+        xIn = MLX.concatenated([xIn, cT], axis: 2)
         let styleT = (style.reshaped([1, 1, TTSConfig.spkDim]) * MLXArray.ones([1, T, 1]))
-        xIn = MLX.concatenated([xIn, styleT], axis: 2)
+        xIn = MLX.concatenated([xIn, styleT.asType(xIn.dtype)], axis: 2)
         xIn = Ops.linear(xIn, w: w.condMergeW, b: w.condMergeB)          // [1,T,512]
 
         // Transformer（13 层，非因果，uvit skip 0-5 → 7-12）
@@ -235,10 +236,10 @@ public struct S2MelInfer {
             let dt = tSpan[s] - tSpan[s - 1]
             let tVal = MLXArray([tSpan[s - 1]], [1])
             if cfg > 0 {
-                // stack [prompt,0] × [style,0] × [mu,0] × [x,x]
-                let px2 = MLX.concatenated([promptX, MLXArray.zeros([1, 80, T])], axis: 0)
-                let st2 = MLX.concatenated([style, MLXArray.zeros([1, TTSConfig.spkDim])], axis: 0)
-                let mu2 = MLX.concatenated([mu, MLXArray.zeros([1, T, 512])], axis: 0)
+                // stack [prompt,0] × [style,0] × [mu,0] × [x,x]（⚠️ zeros 与拼接对象同 dtype）
+                let px2 = MLX.concatenated([promptX, MLXArray.zeros([1, 80, T]).asType(promptX.dtype)], axis: 0)
+                let st2 = MLX.concatenated([style, MLXArray.zeros([1, TTSConfig.spkDim]).asType(style.dtype)], axis: 0)
+                let mu2 = MLX.concatenated([mu, MLXArray.zeros([1, T, 512]).asType(mu.dtype)], axis: 0)
                 let xx = MLX.concatenated([xt, xt], axis: 0)
                 let tt = MLXArray([tSpan[s - 1], tSpan[s - 1]], [2])
                 var d = diTForward(x: xx, promptX: px2, cond: mu2, t: tt, style: st2)
