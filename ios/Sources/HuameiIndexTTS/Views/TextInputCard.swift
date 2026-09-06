@@ -37,7 +37,7 @@ struct TextInputCard: View {
                     .padding(.vertical, 8)
                     .frame(minHeight: 120, maxHeight: 220)
             }
-            .glassCard(cornerRadius: 18)
+            .glassCard(cornerRadius: 18, interactive: false)
 
             Text("提示：当前模型版本 2.5")
                 .font(Theme.Fonts.caption)

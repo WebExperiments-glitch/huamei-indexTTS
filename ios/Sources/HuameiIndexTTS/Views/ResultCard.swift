@@ -43,7 +43,7 @@ struct ResultCard: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
-            .glassCard(cornerRadius: 18)
+            .glassCard(cornerRadius: 18, interactive: false)
         }
         .onChange(of: s.resultURL) { _, new in
             if let url = new { try? player.load(url: url) }
