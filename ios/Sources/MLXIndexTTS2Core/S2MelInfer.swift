@@ -176,9 +176,8 @@ public struct S2MelInfer {
         x = x.transposed(0, 2, 1)
         x = nearestSize(x, size: targetLen)
         for i in 0..<4 {
-            // lrConvs k=3 → pad=(3-1)/2=1，逐级保持长度
-            let lrPad = Ops.zeroPad(x, left: 1, right: 1)
-            var y = Ops.conv1d(lrPad, w: w.lrConvs[i].0, b: w.lrConvs[i].1)
+            // lrConvs k=3 → padding=1（MLX conv 原生 padding，避免 concat 路径）
+            var y = Ops.conv1d(x, w: w.lrConvs[i].0, b: w.lrConvs[i].1, padding: 1)
             y = Ops.layerNorm(y, weight: w.lrNorms[i].0, bias: w.lrNorms[i].1, eps: 1e-5)
             x = Ops.mish(y)
         }

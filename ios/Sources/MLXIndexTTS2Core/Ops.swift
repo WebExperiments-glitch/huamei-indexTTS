@@ -105,11 +105,12 @@ enum Ops {
     /// input 实为 (N=1,L=8,C=41) 与权重 C_in=8 不匹配 → 修复 = 输入/输出做布局翻转，权重原样。
     /// 输出 [B,out,T]；groups：depthwise（in==1）传 C。
     static func conv1d(_ x: MLXArray, w: MLXArray, b: MLXArray?,
-                       dilation: Int = 1, groups: Int = 1) -> MLXArray {
+                       dilation: Int = 1, groups: Int = 1,
+                       padding: Int = 0, stride: Int = 1) -> MLXArray {
         // dtype 对齐：权重 F16，输入可能 F32（rand 初始化/CPU 兜底）→ MLX conv 要求同 dtype
         let xw = x.dtype == w.dtype ? x : x.asType(w.dtype)
         let xt = xw.transposed(0, 2, 1)                        // [B,T,C]
-        var out = MLX.conv1d(xt, w, stride: 1, padding: 0,
+        var out = MLX.conv1d(xt, w, stride: stride, padding: padding,
                              dilation: dilation, groups: groups)  // [B,T',out]
         if let b {
             let bb = b.dtype == out.dtype ? b : b.asType(out.dtype)
