@@ -131,9 +131,11 @@ public final class BigVGAN {
 }
 
 /// snake beta（全局函数，避免嵌套类型访问外层实例成员）：y = x + sin²(x·α)/β
+/// ⚠️ alpha/beta 为每通道参数 [C]，必须扩成 [1,C,1] 沿通道维广播；
+///    否则 [1,C,T]×[C] 按尾维广播撞 T → (1,C,T) vs (C) broadcast 失败（v48 真凶）
 private func snakeBetaOp(_ x: MLXArray, alpha: MLXArray, beta: MLXArray) -> MLXArray {
-    let a = alpha.exp()
-    let b = beta.exp()
+    let a = alpha.exp().reshaped([1, -1, 1])        // [1,C,1]
+    let b = beta.exp().reshaped([1, -1, 1])         // [1,C,1]
     let sin = MLX.sin(x * a)
     return x + (sin * sin) / (b + 1e-9)
 }
