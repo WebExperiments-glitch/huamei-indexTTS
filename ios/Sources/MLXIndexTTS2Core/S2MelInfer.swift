@@ -9,16 +9,18 @@ public struct S2MelInfer {
     public init(weights: S2Mel) { w = weights }
 
     // MARK: - TimestepEmbedder（transformer 用 t_embedder；wavenet 用 t_embedder2，两套独立权重）
-    /// 官方：freqs = exp(-log(max_period)·j/128)（对数间隔）、scale=1000、args=scale·t·freqs、cat[cos,sin]=[256]
+    /// 官方：freqs = exp(-log(max_period)·j/128)（对数间隔）、scale=1000、
+    ///      args = scale·t[:,None]·freqs[None] → [B,128]、cat[cos,sin] → [B,256]
+    /// ⚠️ t 必须扩成 [B,1]：1D×1D 广播在 B≠128 时报错（CFG batch=2 的崩溃根因）
     private func timeEmb(_ t: MLXArray, w: [MLXArray]) -> MLXArray {
         let freqs: [Float] = (0..<128).map { Float(exp(-log(10_000.0) * Double($0) / 128.0)) }
         let scale: Float = 1000.0
-        let args = scale * t * MLXArray(freqs, [128])
-        let emb = MLX.concatenated([args.cos(), args.sin()], axis: 0)   // [256]
-        // mlp0=w[0],b[1]; mlp2=w[2],b[3]
-        var h = Ops.linear(emb.reshaped([1, 256]), w: w[0], b: w[1])
+        let tb = t.reshaped([t.shape[0], 1])                           // [B]→[B,1]
+        let args = scale * tb * MLXArray(freqs, [1, 128])              // [B,128]
+        let emb = MLX.concatenated([args.cos(), args.sin()], axis: 1)  // [B,256]
+        var h = Ops.linear(emb, w: w[0], b: w[1])                      // [B,512]
         h = Ops.silu(h)
-        return Ops.linear(h, w: w[2], b: w[3]).reshaped([-1])   // [512]
+        return Ops.linear(h, w: w[2], b: w[3])                         // [B,512]
     }
     private func tEmb1(_ t: MLXArray) -> MLXArray { timeEmb(t, w: w.tEmbW) }
     private func tEmb2(_ t: MLXArray) -> MLXArray { timeEmb(t, w: w.t2EmbW) }
