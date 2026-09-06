@@ -25,12 +25,13 @@ public struct S2MelInfer {
 
     // MARK: - adaLN（transformer 版：split 前 scale 后 shift，直接乘；官方 AdaptiveLayerNorm）
     private func adaln(_ x: MLXArray, c: MLXArray, pw: MLXArray, pb: MLXArray) -> MLXArray {
-        // c [1,512] → Linear → [1,1024]
-        let m = Ops.linear(c.reshaped([1, 512]), w: pw, b: pb).reshaped([-1])   // [1024]
+        // c [B,512] → Linear → [B,1024] → split(scale, shift) [B,512]；x [B,T,512]
+        let m = Ops.linear(c, w: pw, b: pb)                  // [B,1024]
         let dim = TTSConfig.ditDim
-        let scale = m[0..<dim]      // 前 = weight(scale)，直接乘
-        let shift = m[dim..<(dim * 2)]
-        return x * scale + shift    // x [T,D] × scale [D]（trailing 广播）
+        let b = m.shape[0]
+        let scale = m[0..., 0..<dim].reshaped([b, 1, dim])   // 前 = weight(scale)
+        let shift = m[0..., dim..<(dim * 2)].reshaped([b, 1, dim])
+        return x * scale + shift
     }
 
     // MARK: - DiT forward（x/prompt_x/cond/style → velocity）
@@ -38,7 +39,7 @@ public struct S2MelInfer {
                            t: MLXArray, style: MLXArray) -> MLXArray {
         // x/promptX [1,80,T]；cond [1,T,512]；style [1,192]
         let B = x.shape[0], T = x.shape[2]
-        let t1 = tEmb1(t).reshaped([1, 512])                       // [B,512]
+        let t1 = tEmb1(t)                                      // [B,512]
         // cond → 512
         var c = cond
         c = Ops.linear(c, w: w.condProjW, b: w.condProjB)                // [1,T,512]
@@ -48,7 +49,7 @@ public struct S2MelInfer {
         var xIn = MLX.concatenated([xt, pxt], axis: 2)
         let cT = c.dtype == xIn.dtype ? c : c.asType(xIn.dtype)
         xIn = MLX.concatenated([xIn, cT], axis: 2)
-        let styleT = (style.reshaped([1, 1, TTSConfig.spkDim]) * MLXArray.ones([1, T, 1]))
+        let styleT = (style.reshaped([B, 1, TTSConfig.spkDim]) * MLXArray.ones([1, T, 1]))
         xIn = MLX.concatenated([xIn, styleT.asType(xIn.dtype)], axis: 2)
         xIn = Ops.linear(xIn, w: w.condMergeW, b: w.condMergeB)          // [1,T,512]
 
@@ -65,24 +66,21 @@ public struct S2MelInfer {
             // attn
             let lnA = Ops.rmsNorm(h, weight: blk.anNormW, eps: 1e-5)
             let ca = adaln(lnA, c: t1, pw: blk.anProjW, pb: blk.anProjB)
-            // qkv（fused）[T,1536] → q|k|v 三段（各 512，Range 拆）
+            // qkv（fused）[B,T,1536] → q|k|v 三段（各 512）
             let qkv = Ops.linear(ca, w: blk.attnWqkv, b: nil)
             let D = TTSConfig.ditDim, HD = TTSConfig.ditHeadDim, H = TTSConfig.ditHeads
-            let qkv3 = qkv.reshaped([T, 3 * D])
-            // q/k/v 按 q|k|v 段（Range）拆；随后转 [H,T,HD] 布局
-            var q = qkv3[0..., 0..<D].reshaped([T, H, HD])
-            var k = qkv3[0..., D..<(2 * D)].reshaped([T, H, HD])
-            let v = qkv3[0..., (2 * D)..<(3 * D)].reshaped([T, H, HD])
-            q = Rotary.applyCPU(q, cs: freqT)
+            var q = qkv[0..., 0..., 0..<D].reshaped([B, T, H, HD])
+            var k = qkv[0..., 0..., D..<(2 * D)].reshaped([B, T, H, HD])
+            let v = qkv[0..., 0..., (2 * D)..<(3 * D)].reshaped([B, T, H, HD])
+            q = Rotary.applyCPU(q, cs: freqT)            // [B,T,H,HD]
             k = Rotary.applyCPU(k, cs: freqT)
-            // [T,H,HD] → [H,T,HD]（单 batch 后用 [1,H,T,HD] matmul）
-            let qB = q.transposed(1, 0, 2).reshaped([1, H, T, HD])
-            let kB = k.transposed(1, 0, 2).reshaped([1, H, T, HD])
-            let vB = v.transposed(1, 0, 2).reshaped([1, H, T, HD])
+            let qB = q.transposed(0, 2, 1, 3)            // [B,H,T,HD]
+            let kB = k.transposed(0, 2, 1, 3)
+            let vB = v.transposed(0, 2, 1, 3)
             var sc = qB.matmul(kB.transposed(0, 1, 3, 2)) * (1.0 / Float(HD).squareRoot())
             sc = Ops.softmaxLast(sc)
-            let ctxOut = sc.matmul(vB)                                    // [1,H,T,HD]
-            let ctxFlat = ctxOut.transposed(0, 2, 1, 3).reshaped([T, D])  // [T,D]
+            let ctxOut = sc.matmul(vB)                                    // [B,H,T,HD]
+            let ctxFlat = ctxOut.transposed(0, 2, 1, 3).reshaped([B, T, H * HD])  // [B,T,D]
             let aOut = Ops.linear(ctxFlat, w: blk.attnWo, b: nil)
             h = h + aOut
             // ffn
@@ -104,8 +102,8 @@ public struct S2MelInfer {
         // wavenet 尾
         var wv = Ops.linear(h, w: w.conv1W, b: w.conv1B)                  // [1,T,512]
         wv = wv.transposed(0, 2, 1)                                       // [1,512,T]
-        let t2 = tEmb2(t).reshaped([512])                        // ⚠️ wavenet 用独立 t_embedder2
-        let g2 = t2.reshaped([1, 512, 1])
+        let t2 = tEmb2(t)                                                 // [B,512]
+        let g2 = t2.reshaped([B, 512, 1])
         let wav = wavenet(x: wv, g: g2)                                   // [1,512,T]
         var out = wav.transposed(0, 2, 1)                                 // [1,T,512]
         let resAdd = Ops.linear(h, w: w.resProjW, b: w.resProjB)
@@ -156,18 +154,18 @@ public struct S2MelInfer {
 
     // MARK: - FinalLayer（官方：LN(no-affine,1e-6) → SiLU→Linear(512→1024) → (shift,scale) → x*(1+scale)+shift → Linear）
     private func finalLayer(_ x: MLXArray, c: MLXArray) -> MLXArray {
-        // x [1,T,512]；LN 作用在最后维（512）
+        // x [B,T,512]；LN 作用在最后维（512）
         let xN = Ops.layerNorm(x, weight: nil, bias: nil, eps: 1e-6)
-        // adaLN_modulation = SiLU → Linear(512→1024)
-        let s = Ops.silu(c)                                        // [1,512]
-        let m = Ops.linear(s.reshaped([1, 512]),
-                           w: w.finalAdaW, b: w.finalAdaB).reshaped([-1])   // [1024]
-        // FinalLayer 约定（与 transformer 相反）：前 shift，后 scale，且用 (1+scale)
+        // adaLN_modulation = SiLU → Linear(512→1024)；c [B,512]
+        let s = Ops.silu(c)                                        // [B,512]
+        let m = Ops.linear(s, w: w.finalAdaW, b: w.finalAdaB)      // [B,1024]
+        // FinalLayer 约定：前 shift，后 scale，且用 (1+scale)
         let dim = TTSConfig.ditDim
-        let shift = m[0..<dim]
-        let scale = m[dim..<(dim * 2)]
+        let b = m.shape[0]
+        let shift = m[0..., 0..<dim].reshaped([b, 1, dim])
+        let scale = m[0..., dim..<(dim * 2)].reshaped([b, 1, dim])
         let y = xN * (1 + scale) + shift
-        return Ops.linear(y, w: w.finalLinW, b: w.finalLinB)       // [1,T,512]
+        return Ops.linear(y, w: w.finalLinW, b: w.finalLinB)       // [B,T,512]
     }
 
     // MARK: - LengthRegulator
