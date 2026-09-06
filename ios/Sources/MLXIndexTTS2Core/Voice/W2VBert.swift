@@ -217,9 +217,9 @@ public final class W2VBert {
     // MARK: - 前向
 
     private func featureProjection(_ x: MLXArray) -> MLXArray {
-        // x [B,T,160] → [B,160,T] conv → [B,T,1024]
+        // x [B,T,160] → [B,160,T] conv k3 pad1 → [B,T,1024]
         var h = x.transposed(0, 2, 1)
-        h = Ops.conv1d(h, w: featProjW, b: featProjB)
+        h = Ops.conv1d(Ops.zeroPad(h, left: 1, right: 1), w: featProjW, b: featProjB)
         h = h.transposed(0, 2, 1)
         h = Ops.layerNorm(h, weight: featLN_w, bias: featLN_b)
         return h

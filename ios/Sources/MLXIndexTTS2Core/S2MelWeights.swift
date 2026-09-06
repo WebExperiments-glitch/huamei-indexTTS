@@ -11,7 +11,8 @@ public final class S2Mel {
     public let lrFinal: (MLXArray, MLXArray)          // k1 (512,1,512)
 
     // ---------- DiT ----------
-    public let tEmbW: [MLXArray]                      // t_embedder linear1/2
+    public let tEmbW: [MLXArray]                      // t_embedder linear1/2（transformer 用）
+    public let t2EmbW: [MLXArray]                     // t_embedder2 linear1/2（wavenet 用，独立权重！）
     public let condProjW: MLXArray, condProjB: MLXArray
     public let condMergeW: MLXArray, condMergeB: MLXArray   // 864→512
     public let skipLinW: MLXArray, skipLinB: MLXArray       // 512+80→512
@@ -62,10 +63,14 @@ public final class S2Mel {
         lrFinal = (try load("length_regulator.model.12.weight"),
                    try load("length_regulator.model.12.bias"))
 
-        // t_embedder / t_embedder2（linear1/linear2）
+        // t_embedder / t_embedder2（linear1/linear2；⚠️ 两套独立——transformer 与 wavenet 各用一套）
         tEmbW = try [
             load(pre + "t_embedder.linear1.weight"), load(pre + "t_embedder.linear1.bias"),
             load(pre + "t_embedder.linear2.weight"), load(pre + "t_embedder.linear2.bias"),
+        ]
+        t2EmbW = try [
+            load(pre + "t_embedder2.linear1.weight"), load(pre + "t_embedder2.linear1.bias"),
+            load(pre + "t_embedder2.linear2.weight"), load(pre + "t_embedder2.linear2.bias"),
         ]
         // cond merge
         condProjW = try load(pre + "cond_projection.weight")
@@ -77,8 +82,8 @@ public final class S2Mel {
         conv1W = try load(pre + "conv1.weight"); conv1B = try load(pre + "conv1.bias")
         conv2W = try load(pre + "conv2.weight"); conv2B = try load(pre + "conv2.bias")
         resProjW = try load(pre + "res_projection.weight"); resProjB = try load(pre + "res_projection.bias")
-        finalAdaW = try load(pre + "final_layer.adaLN_modulation.1.weight")
-        finalAdaB = try load(pre + "final_layer.adaLN_modulation.1.bias")
+        finalAdaW = try load(pre + "final_layer.adaLN_modulation.layers.1.weight")
+        finalAdaB = try load(pre + "final_layer.adaLN_modulation.layers.1.bias")
         finalLinW = try load(pre + "final_layer.linear.weight")
         finalLinB = try load(pre + "final_layer.linear.bias")
 

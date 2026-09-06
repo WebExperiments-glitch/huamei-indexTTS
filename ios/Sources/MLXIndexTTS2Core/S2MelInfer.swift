@@ -8,22 +8,20 @@ public struct S2MelInfer {
 
     public init(weights: S2Mel) { w = weights }
 
-    // MARK: - TimestepEmbedder
-    // freqs buffer：safetensors 无该 buffer（python 端按 buffer 加载）→ 用代码生成（50kHz 全频）
-    // ⚠️ 频率公式：官方 buffer = 2π·freq_table? p0 里用 weight 内 buffer——版本差异见 README 修正清单。
-    private func timeEmb(_ t: MLXArray) -> MLXArray {
-        // 官方 TimestepEmbedder：freqs = exp(-log(max_period)·j/128)（对数间隔！）
-        //   max_period=10000，scale=1000，args = scale·t·freqs，cat[cos,sin]=[256]
-        // ⚠️ 旧版用线性频率(j/8000·2π)是错误近似，已按官方公式修正。
+    // MARK: - TimestepEmbedder（transformer 用 t_embedder；wavenet 用 t_embedder2，两套独立权重）
+    /// 官方：freqs = exp(-log(max_period)·j/128)（对数间隔）、scale=1000、args=scale·t·freqs、cat[cos,sin]=[256]
+    private func timeEmb(_ t: MLXArray, w: [MLXArray]) -> MLXArray {
         let freqs: [Float] = (0..<128).map { Float(exp(-log(10_000.0) * Double($0) / 128.0)) }
         let scale: Float = 1000.0
         let args = scale * t * MLXArray(freqs, [128])
         let emb = MLX.concatenated([args.cos(), args.sin()], axis: 0)   // [256]
         // mlp0=w[0],b[1]; mlp2=w[2],b[3]
-        var h = Ops.linear(emb.reshaped([1, 256]), w: w.tEmbW[0], b: w.tEmbW[1])
+        var h = Ops.linear(emb.reshaped([1, 256]), w: w[0], b: w[1])
         h = Ops.silu(h)
-        return Ops.linear(h, w: w.tEmbW[2], b: w.tEmbW[3]).reshaped([-1])   // [512]
+        return Ops.linear(h, w: w[2], b: w[3]).reshaped([-1])   // [512]
     }
+    private func tEmb1(_ t: MLXArray) -> MLXArray { timeEmb(t, w: w.tEmbW) }
+    private func tEmb2(_ t: MLXArray) -> MLXArray { timeEmb(t, w: w.t2EmbW) }
 
     // MARK: - adaLN（transformer 版：split 前 scale 后 shift，直接乘；官方 AdaptiveLayerNorm）
     private func adaln(_ x: MLXArray, c: MLXArray, pw: MLXArray, pb: MLXArray) -> MLXArray {
@@ -40,7 +38,7 @@ public struct S2MelInfer {
                            t: MLXArray, style: MLXArray) -> MLXArray {
         // x/promptX [1,80,T]；cond [1,T,512]；style [1,192]
         let B = x.shape[0], T = x.shape[2]
-        let t1 = timeEmb(t).reshaped([1, 512])                       // [B,512]
+        let t1 = tEmb1(t).reshaped([1, 512])                       // [B,512]
         // cond → 512
         var c = cond
         c = Ops.linear(c, w: w.condProjW, b: w.condProjB)                // [1,T,512]
@@ -105,7 +103,7 @@ public struct S2MelInfer {
         // wavenet 尾
         var wv = Ops.linear(h, w: w.conv1W, b: w.conv1B)                  // [1,T,512]
         wv = wv.transposed(0, 2, 1)                                       // [1,512,T]
-        let t2 = timeEmb(t).reshaped([512])
+        let t2 = tEmb2(t).reshaped([512])                        // ⚠️ wavenet 用独立 t_embedder2
         let g2 = t2.reshaped([1, 512, 1])
         let wav = wavenet(x: wv, g: g2)                                   // [1,512,T]
         var out = wav.transposed(0, 2, 1)                                 // [1,T,512]
