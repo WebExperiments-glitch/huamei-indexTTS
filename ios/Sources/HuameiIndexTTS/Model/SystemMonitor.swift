@@ -43,12 +43,22 @@ final class SystemMonitor: ObservableObject {
 
     func appendLog(_ line: String) {
         let ts = Self.formatter.string(from: Date())
-        logs.append("[\(ts)] \(line)")
-        if logs.count > maxLogs { logs.removeFirst(logs.count - maxLogs) }
+        let s = "[\(ts)] \(line)"
+        // ⚠️ logs 由 SwiftUI ForEach 主线程读取，而写入来自后台合成线程 → 必须主线程串行，
+        //     否则 removeFirst+遍历竞争 → EXC_BREAKPOINT（v37 崩溃根因）。
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.logs.append(s)
+            if self.logs.count > self.maxLogs {
+                self.logs.removeFirst(self.logs.count - self.maxLogs)
+            }
+        }
     }
 
     func clearLogs() {
-        logs.removeAll()
+        DispatchQueue.main.async { [weak self] in
+            self?.logs.removeAll()
+        }
     }
 
     private func tick() {
