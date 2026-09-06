@@ -92,9 +92,10 @@ enum Ops {
     // MARK: - 卷积
 
     /// conv1d：x [B,C,T]；w (out,k,in)；输出 [B,out,T]（stride 1，padding 由调用方预填）
+    /// groups：depthwise 卷积（in==1 每通道独立）时传 C（=out），否则默认 1
     static func conv1d(_ x: MLXArray, w: MLXArray, b: MLXArray?,
-                       dilation: Int = 1) -> MLXArray {
-        var out = MLX.conv1d(x, w, stride: 1, padding: 0, dilation: dilation)
+                       dilation: Int = 1, groups: Int = 1) -> MLXArray {
+        var out = MLX.conv1d(x, w, stride: 1, padding: 0, dilation: dilation, groups: groups)
         if let b { out = out + b.reshaped([1, -1, 1]) }
         return out
     }

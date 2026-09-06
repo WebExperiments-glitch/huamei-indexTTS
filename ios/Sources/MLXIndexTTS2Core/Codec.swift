@@ -55,7 +55,8 @@ public final class SemanticCodecDecoder {
         let p1W, p1B, p2W, p2B: MLXArray
         let gamma: MLXArray
         func call(_ x: MLXArray) -> MLXArray {
-            var h = Ops.conv1d(x, w: dwW, b: dwB)          // depthwise 由 groups 实现；kernel(384,7,1)
+            // depthwise：dwconv 权重 (384,7,1)，必须 groups=384（每通道独立卷积）
+            var h = Ops.conv1d(x, w: dwW, b: dwB, groups: dwW.shape[0])
             h = h.transposed(0, 2, 1)
             h = Ops.layerNorm(h, weight: nW, bias: nB, eps: 1e-6)
             var y = Ops.linear(h, w: p1W, b: p1B)
