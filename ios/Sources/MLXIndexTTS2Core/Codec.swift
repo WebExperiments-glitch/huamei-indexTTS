@@ -56,7 +56,9 @@ public final class SemanticCodecDecoder {
         let gamma: MLXArray
         func call(_ x: MLXArray) -> MLXArray {
             // depthwise：dwconv 权重 (384,7,1)，必须 groups=384（每通道独立卷积）
-            var h = Ops.conv1d(x, w: dwW, b: dwB, groups: dwW.shape[0])
+            // k=7 → pad=(7-1)/2=3，残差结构要保持长度一致
+            let xp = Ops.zeroPad(x, left: 3, right: 3)
+            var h = Ops.conv1d(xp, w: dwW, b: dwB, groups: dwW.shape[0])
             h = h.transposed(0, 2, 1)
             h = Ops.layerNorm(h, weight: nW, bias: nB, eps: 1e-6)
             var y = Ops.linear(h, w: p1W, b: p1B)
@@ -70,7 +72,9 @@ public final class SemanticCodecDecoder {
 
     private func vocosBackbone(_ x: MLXArray) -> MLXArray {
         // x [B,1024,T]
-        var h = Ops.conv1d(x, w: embedW, b: embedB)         // [B,384,T]
+        // embed conv k=7 → pad=(7-1)/2=3，保持长度
+        let xe = Ops.zeroPad(x, left: 3, right: 3)
+        var h = Ops.conv1d(xe, w: embedW, b: embedB)         // [B,384,T]
         h = h.transposed(0, 2, 1)
         h = Ops.layerNorm(h, weight: normW, bias: normB, eps: 1e-6)
         h = h.transposed(0, 2, 1)
@@ -107,7 +111,9 @@ public final class SemanticCodecDecoder {
             NSLog("[codec] pre-nearest shape=%@", feat.shape.description)
             feat = nearest2x(feat)                               // [1,1024,2T]
             NSLog("[codec] post-nearest shape=%@", feat.shape.description)
-            let out = Ops.conv1d(feat, w: upW, b: upB)           // [1,1024,2T]
+            // up conv k=3 → pad=(3-1)/2=1，保持长度
+            let upPad = Ops.zeroPad(feat, left: 1, right: 1)
+            let out = Ops.conv1d(upPad, w: upW, b: upB)          // [1,1024,2T]
             return out.transposed(0, 2, 1)                       // [1,2T,1024]
         }
     }

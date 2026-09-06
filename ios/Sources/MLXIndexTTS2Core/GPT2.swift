@@ -45,16 +45,14 @@ public final class GPT2 {
     /// 输入已是 embedding 序列 [B,T,D]，全序列因果（含 KV cache 更新）
     /// cache: 每层 [k,v] 之已缓存；startPos：当前序列在全局位置中的起点
     public func forward(_ x: MLXArray, cacheK: inout [MLXArray?], cacheV: inout [MLXArray?],
-                        startPos: Int, ropeCosSin: MLXArray,
-                        causalFull: Bool) -> MLXArray {
+                        startPos: Int, causalFull: Bool) -> MLXArray {
         var h = x
         let scale = 1.0 / Float(TTSConfig.gptHeadDim).squareRoot()
         for (i, blk) in blocks.enumerated() {
             let ln1 = Ops.layerNorm(h, weight: blk.ln1w, bias: blk.ln1b, eps: 1e-5)
             var qkv = Ops.quantizedLinear(ln1, wq: blk.cAttnWq, scales: blk.cAttnScales, biases: blk.cAttnBiases)
             if let b = blk.cAttnB { qkv = qkv + b }
-            // [B,T,3*D] → q/k/v（reshape 后按 int 索引取组；若 MLX 索引不支持，
-            // 备选：split 三段再 reshape）
+            // [B,T,3*D] → q/k/v（reshape 后按 int 索引取组
             let d = TTSConfig.gptDim
             let qkvShape = qkv.shape
             let bsz = qkvShape[0], t = qkvShape[1]
@@ -63,9 +61,8 @@ public final class GPT2 {
             var q = qkv[0..., 0..., 0, 0..., 0...]
             var k = qkv[0..., 0..., 1, 0..., 0...]
             let v = qkv[0..., 0..., 2, 0..., 0...]
-            // RoPE（CPU 精确；offset 保证增量步用绝对位置）
-            q = Rotary.applyCPU(q, cs: ropeCosSin, offset: startPos)
-            k = Rotary.applyCPU(k, cs: ropeCosSin, offset: startPos)
+            // ⚠️ IndexTTS GPT 用学习位置嵌入（mel/text_pos_embedding 权重），gpt.wpe 被官方
+            //    null 化、无 RoPE！此前在此套 Rotary 是错误（来源：s2mel 的 gpt_fast 抄错）。
             // [B,T,H,Dh] → [B,H,T,Dh]（attention 布局）
             q = q.transposed(0, 2, 1, 3)
             k = k.transposed(0, 2, 1, 3)

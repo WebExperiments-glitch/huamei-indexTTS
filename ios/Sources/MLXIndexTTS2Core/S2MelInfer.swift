@@ -12,9 +12,10 @@ public struct S2MelInfer {
     // freqs buffer：safetensors 无该 buffer（python 端按 buffer 加载）→ 用代码生成（50kHz 全频）
     // ⚠️ 频率公式：官方 buffer = 2π·freq_table? p0 里用 weight 内 buffer——版本差异见 README 修正清单。
     private func timeEmb(_ t: MLXArray) -> MLXArray {
-        // 频率表（8000Hz 工程近似；若用真 buffer 更准——见 README）
-        let freqs: [Float] = (0..<128).map { Float($0) / 8000.0 * 2 * .pi }
-        // ⚠️ 官方 t_embedder scale=1000，实际 buffer 请从 torch .pt 导出（feat/资源阶段处理）
+        // 官方 TimestepEmbedder：freqs = exp(-log(max_period)·j/128)（对数间隔！）
+        //   max_period=10000，scale=1000，args = scale·t·freqs，cat[cos,sin]=[256]
+        // ⚠️ 旧版用线性频率(j/8000·2π)是错误近似，已按官方公式修正。
+        let freqs: [Float] = (0..<128).map { Float(exp(-log(10_000.0) * Double($0) / 128.0)) }
         let scale: Float = 1000.0
         let args = scale * t * MLXArray(freqs, [128])
         let emb = MLX.concatenated([args.cos(), args.sin()], axis: 0)   // [256]
@@ -177,7 +178,9 @@ public struct S2MelInfer {
         x = x.transposed(0, 2, 1)
         x = nearestSize(x, size: targetLen)
         for i in 0..<4 {
-            var y = Ops.conv1d(x, w: w.lrConvs[i].0, b: w.lrConvs[i].1)
+            // lrConvs k=3 → pad=(3-1)/2=1，逐级保持长度
+            let lrPad = Ops.zeroPad(x, left: 1, right: 1)
+            var y = Ops.conv1d(lrPad, w: w.lrConvs[i].0, b: w.lrConvs[i].1)
             y = Ops.layerNorm(y, weight: w.lrNorms[i].0, bias: w.lrNorms[i].1, eps: 1e-5)
             x = Ops.mish(y)
         }
@@ -209,12 +212,15 @@ public struct S2MelInfer {
         let B = mu.shape[0], T = mu.shape[1]
         let promptLen = prompt.shape[2]
         var rng = SplitMix64(seed: seed)
-        // z = randn[1,80,T]
-        var xF = [Float](repeating: 0, count: 80 * T)
-        for i in 0..<xF.count {
-            xF[i] = Float.random(in: -1...1, using: &rng) * 1.0  // 近似高斯（多处叠加中心极限）
+        // z = randn[1,80,T]（标准正态；官方 torch.randn_like）
+        // ⚠️ 旧版用均匀分布 U(-1,1) 冒充高斯 → 修正为 Box-Muller
+        func randn() -> Float {
+            let u1 = max(Float.random(in: 0..<1, using: &rng), Float.leastNonzeroMagnitude)
+            let u2 = Float.random(in: 0..<1, using: &rng)
+            return (-2 * log(u1)).squareRoot() * cos(Float.pi * 2 * u2)
         }
-        // ⚠️ 高斯采样待修（用 Box-Muller）
+        var xF = [Float](repeating: 0, count: 80 * T)
+        for i in 0..<xF.count { xF[i] = randn() }
         var x = MLXArray(xF, [1, 80, T])
         let z = x
         var promptX = MLXArray.zeros([1, 80, T])

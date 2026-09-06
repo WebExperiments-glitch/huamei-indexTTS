@@ -78,53 +78,35 @@ public final class BigVGAN {
         }
     }
 
-    /// 上采样：conv1d 插值（ConvTranspose 语义）—— im2col 反卷积兜底
-    private func upsample(_ x: MLXArray, stage: Int, targetLen: Int) -> MLXArray {
+    /// 转置卷积上采样（官方 ConvTranspose1d 语义）
+    /// 配置：stride=upsRates[4,4,2,2,2,2]，kernel=upsKernels[8,8,4,4,4,4]，
+    ///      padding=(k-stride)/2 → 输出长度精确 = L×stride（无需裁剪）。
+    /// 真实权重 ups.\(i).weight [C_out,k,C_in] 即 MLX 布局，原样直传。
+    /// ⚠️ 旧实现「nearest×rate+conv」是错误近似，已替换为真实转置卷积。
+    private func upsample(_ x: MLXArray, stage: Int) -> MLXArray {
         let (w, b) = ups[stage]
-        // ⚠️ 反卷积：先用 nearest ×rate 再 conv（近似，需修正见 README）
         let rate = TTSConfig.upsRates[stage]
-        let up = nearest(x, times: rate)
         let k = w.shape[1]
         let pad = (k - rate) / 2
-        var o = Ops.conv1d(up, w: w, b: b)
-        // 裁剪到 targetLen（反卷积导致的边缘差）
-        if o.shape[2] > targetLen {
-            o = o[0..., 0..., 0..<targetLen]
-        }
-        return o
-    }
-
-    private func nearest(_ x: MLXArray, times: Int) -> MLXArray {
-        let (b, c, t) = (x.shape[0], x.shape[1], x.shape[2])
-        let f = x.asFloatArray()
-        guard f.count == b * c * t, t > 0 else { return x }
-        var out = [Float](repeating: 0, count: b * c * t * times)
-        for i in 0..<(b * c * t) {
-            for r in 0..<times { out[i * times + r] = f[i] }
-        }
-        // 保持输入 dtype（CPU 兜底强转 F32 取数，构造后转回）
-        return MLXArray(out, [b, c, t * times]).asType(x.dtype)
+        let xt = x.transposed(0, 2, 1)                         // [B,T,C_in]
+        var o = MLX.convTransposed1d(xt, w, stride: rate, padding: pad)  // [B,L*rate,C_out]
+        o = o + b.reshaped([1, 1, -1])
+        return o.transposed(0, 2, 1)                           // [B,C_out,L*rate]
     }
 
     /// mel [1,80,T] → wav [1,1, T*256]
     public func synthesize(mel: MLXArray) -> MLXArray {
         var x = Ops.zeroPad(mel, left: 3, right: 3)
         x = Ops.conv1d(x, w: convPreW, b: convPreB)          // [1,1536,T]
-        var curLen = x.shape[2]
-        var stageOut: [MLXArray] = []
         for stage in 0..<6 {
-            let targetLen = curLen * TTSConfig.upsRates[stage]
-            var h = upsample(x, stage: stage, targetLen: targetLen)
-            curLen = h.shape[2]
-            // 3 个 AMPBlock 求和 /3
+            x = upsample(x, stage: stage)                    // ×rate 逐级上采样
             var acc: MLXArray?
             for j in 0..<3 {
                 let blk = blocks[stage * 3 + j]
-                let o = blk.call(h)
+                let o = blk.call(x)
                 acc = (acc == nil) ? o : acc! + o
             }
-            h = acc! / 3.0
-            x = h
+            x = acc! / 3.0
         }
         // post snake → conv_post(1,7,24) → tanh
         x = snakeBetaOp(x, alpha: postAlpha, beta: postBeta)

@@ -97,8 +97,6 @@ public final class GPTGenerator {
         // [3+L, D]
 
         // ---- 自回归 ----
-        let maxPos = 1 + config.maxMelTokens + L + 3
-        let ropeCS = Rotary.precompute(seqLen: maxPos)
         var kvK = [MLXArray?](repeating: nil, count: TTSConfig.gptLayers)
         var kvV = [MLXArray?](repeating: nil, count: TTSConfig.gptLayers)
 
@@ -109,8 +107,7 @@ public final class GPTGenerator {
         fullSeq = fullSeq.reshaped([1, fullSeq.shape[0], d])
 
         var hidden = model.forward(fullSeq, cacheK: &kvK, cacheV: &kvV,
-                                   startPos: 0, ropeCosSin: ropeCS,
-                                   causalFull: true)
+                                   startPos: 0, causalFull: true)
 
         var codes: [Int] = []
         var prev = Set<Int>()
@@ -134,8 +131,7 @@ public final class GPTGenerator {
             let pos = try rowVec("mel_pos_embedding.emb.weight", step)
             let emb = (row + pos).reshaped([1, 1, d])
             hidden = model.forward(emb, cacheK: &kvK, cacheV: &kvV,
-                                   startPos: step, ropeCosSin: ropeCS,
-                                   causalFull: false)
+                                   startPos: step, causalFull: false)
             step += 1
         }
         return codes
