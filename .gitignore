@@ -39,6 +39,7 @@ builder.json
 run*.log
 ms2.json
 ms_files.json
+BAG/
 
 # Xcode / SwiftPM
 .DS_Store

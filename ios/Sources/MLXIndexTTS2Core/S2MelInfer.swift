@@ -76,12 +76,16 @@ public struct S2MelInfer {
             //    的 getItemND 上有已知脆弱性 → v52/v55 CFG step2 崩。
             let qkv = Ops.linear(ca, w: blk.attnWqkv, b: nil)
             let D = TTSConfig.ditDim, HD = TTSConfig.ditHeadDim, H = TTSConfig.ditHeads
+            DLog.write("DiT 层\(i) before qkv: x(ca).shape=\(ca.shape) B=\(B) T=\(T) D=\(D)")
             let qkv3 = qkv.reshaped([B, T, 3, D])
+            DLog.write("DiT 层\(i) qkv linear shape=\(qkv.shape) qkv3(reshaped)=\(qkv3.shape)")
             var q = qkv3[0..., 0..., 0, 0...].reshaped([B, T, H, HD])
             var k = qkv3[0..., 0..., 1, 0...].reshaped([B, T, H, HD])
             let v = qkv3[0..., 0..., 2, 0...].reshaped([B, T, H, HD])
+            DLog.write("DiT 层\(i) q=\(q.shape) k=\(k.shape) v=\(v.shape)")
             q = try Rotary.applyCPU(q, cs: freqT)            // [B,T,H,HD]
             k = try Rotary.applyCPU(k, cs: freqT)
+            DLog.write("DiT 层\(i) after rope q=\(q.shape) k=\(k.shape)")
             let qB = q.transposed(0, 2, 1, 3)            // [B,H,T,HD]
             let kB = k.transposed(0, 2, 1, 3)
             let vB = v.transposed(0, 2, 1, 3)
@@ -275,10 +279,15 @@ public struct S2MelInfer {
                         let xx = MLX.concatenated([xt, xt], axis: 0)
                         let tt = MLXArray([tSpan[s - 1], tSpan[s - 1]], [2])
                         d = try diTForward(x: xx, promptX: px2, cond: mu2, t: tt, style: st2)
+                        // ⚠️ 修 d1/d0 拆分轴！此前写成 d[0...,0..<dHalf,...] 切的是
+                        //    第2维(通道)，导致 d=[2,1,T]，xt+=[1,80,T]+[2,1,T] 广播成 [2,80,T]，
+                        //    step2 的 xx=concat → B=4 → 崩。正确应切第0维(batch)。
                         let dHalf = d.shape[0] / 2
-                        let d1 = d[0..., 0..<dHalf, 0...]
-                        let d0 = d[0..., dHalf..<d.shape[0], 0...]
+                        let d1 = d[0..<dHalf, 0..., 0...]            // [dHalf,80,T] batch0
+                        let d0 = d[dHalf..<(2 * dHalf), 0..., 0...]  // [dHalf,80,T] batch1
+                        DLog.write("cfm d split: d=\(d.shape) dHalf=\(dHalf) d1=\(d1.shape) d0=\(d0.shape)")
                         d = (d1 * (1 + cfg)) - (d0 * cfg)
+                        DLog.write("cfm d after cfg d=\(d.shape)")
                     } else {
                         d = try diTForward(x: xt, promptX: promptX, cond: mu, t: tVal, style: style)
                     }
