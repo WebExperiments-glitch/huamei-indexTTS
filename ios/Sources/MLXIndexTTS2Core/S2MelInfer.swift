@@ -206,7 +206,8 @@ public struct S2MelInfer {
     // MARK: - CFM（欧拉 + CFG）
     public func cfm(mu: MLXArray, prompt: MLXArray, style: MLXArray,
                     steps: Int = TTSConfig.cfmSteps,
-                    seed: UInt64) throws -> MLXArray {
+                    seed: UInt64,
+                    onStep: ((Int, Int) -> Void)? = nil) throws -> MLXArray {
         // mu [1,T,512]（prompt 段+目标段）；prompt [1,80,P]
         let B = mu.shape[0], T = mu.shape[1]
         let promptLen = prompt.shape[2]
@@ -225,33 +226,37 @@ public struct S2MelInfer {
         let tSpan = (0...steps).map { Float($0) / Float(steps) }
         let cfg = TTSConfig.cfmCfgRate
         var xt = x
-        let tt0 = MLXArray([tSpan[0]], [1])
-        _ = tt0
         for s in 1...steps {
+            onStep?(s, steps)                  // 打点（崩溃前可知步数）
             let dt = tSpan[s] - tSpan[s - 1]
             let tVal = MLXArray([tSpan[s - 1]], [1])
-            if cfg > 0 {
-                // stack [prompt,0] × [style,0] × [mu,0] × [x,x]（⚠️ zeros 与拼接对象同 dtype）
-                let px2 = MLX.concatenated([promptX, MLXArray.zeros([1, 80, T]).asType(promptX.dtype)], axis: 0)
-                let st2 = MLX.concatenated([style, MLXArray.zeros([1, TTSConfig.spkDim]).asType(style.dtype)], axis: 0)
-                let mu2 = MLX.concatenated([mu, MLXArray.zeros([1, T, 512]).asType(mu.dtype)], axis: 0)
-                let xx = MLX.concatenated([xt, xt], axis: 0)
-                let tt = MLXArray([tSpan[s - 1], tSpan[s - 1]], [2])
-                var d = try diTForward(x: xx, promptX: px2, cond: mu2, t: tt, style: st2)
-                let dHalf = d.shape[0] / 2
-                let d1 = d[0..., 0..<dHalf, 0...]
-                let d0 = d[0..., dHalf..<d.shape[0], 0...]
-                d = (d1 * (1 + cfg)) - (d0 * cfg)
-                xt = xt + d * dt
-            } else {
-                let d = try diTForward(x: xt, promptX: promptX, cond: mu, t: tVal, style: style)
-                xt = xt + d * dt
+            // ⚠️ 整步包 in withError：任何 MLX 错误在此 catch → 转可读 throw 并立即退出，
+            //    不再触碰任何 MLX（防止非 throwing 路径二次 trap = brk#1 崩溃的根因）
+            do {
+                try MLX.withError {
+                    var d: MLXArray
+                    if cfg > 0 {
+                        let px2 = MLX.concatenated([promptX, MLXArray.zeros([1, 80, T]).asType(promptX.dtype)], axis: 0)
+                        let st2 = MLX.concatenated([style, MLXArray.zeros([1, TTSConfig.spkDim]).asType(style.dtype)], axis: 0)
+                        let mu2 = MLX.concatenated([mu, MLXArray.zeros([1, T, 512]).asType(mu.dtype)], axis: 0)
+                        let xx = MLX.concatenated([xt, xt], axis: 0)
+                        let tt = MLXArray([tSpan[s - 1], tSpan[s - 1]], [2])
+                        d = try diTForward(x: xx, promptX: px2, cond: mu2, t: tt, style: st2)
+                        let dHalf = d.shape[0] / 2
+                        let d1 = d[0..., 0..<dHalf, 0...]
+                        let d0 = d[0..., dHalf..<d.shape[0], 0...]
+                        d = (d1 * (1 + cfg)) - (d0 * cfg)
+                    } else {
+                        d = try diTForward(x: xt, promptX: promptX, cond: mu, t: tVal, style: style)
+                    }
+                    xt = xt + d * dt
+                    xt = zeroPrefix(xt, count: promptLen)
+                    MLX.eval(xt)               // eager：错误在 withError 内转为 throw
+                }
+            } catch {
+                NSLog("[s2mel] cfm step %d/%d error: %@", s, steps, String(describing: error))
+                throw error
             }
-            xt = zeroPrefix(xt, count: promptLen)
-            // ⚠️ 每步 eager 求值：让任何 MLX 形状/广播/dtype 错误在循环内立即暴露，
-            //    由外层（InferenceEngine）withError 转成可读 throw；不可再嵌套 withError
-            //    （嵌套会破坏错误 handler 状态 → Swift 空结果 trap = 此前 brk#1 崩溃）
-            MLX.eval(xt)
         }
         return xt
     }
