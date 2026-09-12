@@ -132,13 +132,15 @@ public final class Campplus {
             x = relu(x)
             DLog.write("CAMP tdnn out=\(x.shape)")
             for bi in 0..<blocks.count {
-                for layer in blocks[bi].layers {
+                for (li, layer) in blocks[bi].layers.enumerated() {
                     let y = layer.forward(x)
                     x = MLX.concatenated([x, y], axis: 1)
+                    DLog.write("CAMP b\(bi)l\(li) concat out=\(x.shape)")
                 }
                 x = transits[bi].bn.run(x)
                 x = relu(x)
                 x = conv1dPadded(x, w: transits[bi].w, dil: 1, pad: 0, stride: 1)
+                DLog.write("CAMP b\(bi) transit out=\(x.shape)")
             }
             x = outBN.run(x)
             x = relu(x)
@@ -280,15 +282,20 @@ struct CAMDenseLayer {
     func forward(_ x: MLXArray) -> MLXArray {
         // 官方 CAMDenseTDNNLayer.forward：
         //   x = linear1(nonlinear1(x))          → in→bn 提维
-        //   x = cam_layer(nonlinear2(x))        → bn 上做通道注意力 + 时间卷积
+        //   x = cam_layer(nonlinear2(x))        → BN(bn)+relu 后做通道注意力 + 时间卷积
         // 输入宽度 = block_in + li*out（每层 +32），BN(nonlinear1) 用该层 in 通道
+        DLog.write("CAMLAYER in x=\(x.shape) l1=\(linear1W.shape)")
         var h = nonlinear1.run(x)
         h = conv1x1(h, w: linear1W)
+        h = nonlinear2.run(h)                  // 官方 cam_layer(nonlinear2(x)) 的 nonlinear2（BN+relu）
+        h = relu(h)
+        DLog.write("CAMLAYER h=\(h.shape)")
         // CAM：对 bn 通道做通道注意力门
         let gate = attention(h)
         // cam_local：带 dilation 的时间卷积提取帧级特征
         var y = camLocal(h)
         y = y * gate
+        DLog.write("CAMLAYER out y=\(y.shape)")
         return y
     }
 
