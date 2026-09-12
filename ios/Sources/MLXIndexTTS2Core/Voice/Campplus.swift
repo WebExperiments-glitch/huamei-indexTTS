@@ -288,7 +288,7 @@ struct CAMDenseLayer {
         var h = nonlinear1.run(x)
         h = conv1x1(h, w: linear1W)
         h = nonlinear2.run(h)                  // 官方 cam_layer(nonlinear2(x)) 的 nonlinear2（BN+relu）
-        h = relu(h)
+        h = MLX.maximum(h, 0)
         DLog.write("CAMLAYER h=\(h.shape)")
         // CAM：对 bn 通道做通道注意力门
         let gate = attention(h)
