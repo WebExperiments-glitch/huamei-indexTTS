@@ -83,15 +83,35 @@ public final class BigVGAN {
     ///      padding=(k-stride)/2 → 输出长度精确 = L×stride（无需裁剪）。
     /// 真实权重 ups.\(i).weight [C_out,k,C_in] 即 MLX 布局，原样直传。
     /// ⚠️ 旧实现「nearest×rate+conv」是错误近似，已替换为真实转置卷积。
+    /// ⚠️ mlx-swift iOS GPU 对 convTransposed1d 输出长度 >32768 有已知 bug
+    ///    （mlx #424）→ 长句会崩：把时间维切块逐块做转置卷积再拼接。
     private func upsample(_ x: MLXArray, stage: Int) -> MLXArray {
         let (w, b) = ups[stage]
         let rate = TTSConfig.upsRates[stage]
         let k = w.shape[1]
         let pad = (k - rate) / 2
         let xt = x.transposed(0, 2, 1)                         // [B,T,C_in]
-        var o = MLX.convTransposed1d(xt, w, stride: rate, padding: pad)  // [B,L*rate,C_out]
-        o = o + b.reshaped([1, 1, -1])
-        return o.transposed(0, 2, 1)                           // [B,C_out,L*rate]
+        let T = xt.shape[1]
+        // 单次转置卷积输出上限：输出长度 T_out = T_chunk × rate ≤ 32768 → 块长 ≤ 出 32768 / rate
+        let maxOut = 32_768
+        let chunkT = max(1, maxOut / rate)
+        guard T > chunkT else {
+            var o = MLX.convTransposed1d(xt, w, stride: rate, padding: pad)  // [B,L*rate,C_out]
+            o = o + b.reshaped([1, 1, -1])
+            return o.transposed(0, 2, 1)                       // [B,C_out,L*rate]
+        }
+        DLog.write("BigVGAN upsample stage\(stage) chunked T=\(T) chunk=\(chunkT)")
+        var parts: [MLXArray] = []
+        var off = 0
+        while off < T {
+            let e = min(off + chunkT, T)
+            var seg = xt[0..., off..<e, 0...]                  // [B,chunk,C_in]
+            var o = MLX.convTransposed1d(seg, w, stride: rate, padding: pad)
+            o = o + b.reshaped([1, 1, -1])
+            parts.append(o.transposed(0, 2, 1))                // [B,C_out,chunk*rate]
+            off = e
+        }
+        return MLX.concatenated(parts, axis: 2)
     }
 
     /// mel [1,80,T] → wav [1,1, T*256]

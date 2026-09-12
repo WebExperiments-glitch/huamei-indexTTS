@@ -87,12 +87,16 @@ public final class GPTGenerator {
         prefixEmb = MLX.concatenated([prefixEmb, MLXArray.zeros([1, d])], axis: 0)
         prefixEmb = MLX.concatenated([prefixEmb, MLXArray.zeros([1, d])], axis: 0)   // [3,1280]
 
-        // ⚠️ 语言（<|zh|> 等）已作为 text token 由 text_embedding 编码；
-        //    官方 inference 的 prepare_gpt_inputs 不加 lang_embedding，这里去掉多余 langRow。
+        // ⚠️ 官方 2.5（gpt/model_v2_5.py prepare_gpt_inputs:644）在 text_emb 上
+        //    += lang_embedding(langs)，langs = lang_to_token(lang) = LANGUAGE_DICT[lang]。
+        //    lang_embedding.weight=[107,1280]（106 语言 + common=106）。语言前缀 token（<|zh|>）
+        //    由 text_embedding 编码，langRow 是单独附加的语言嵌入 —— 两者都要加。
+        //    ❌ 此前误删 langRow → 文本嵌入缺语言信号 → 内容错（"你好"→乱句）。
+        let langRow = try rowVec("lang_embedding.weight", min(langId, TTSConfig.langCount - 1))
         for (pos, tok) in textSeq.enumerated() {
             var row = try rowVec("text_embedding.weight", tok)
             let tpos = try rowVec("text_pos_embedding.emb.weight", pos)
-            row = row + tpos
+            row = row + tpos + langRow
             prefixEmb = MLX.concatenated([prefixEmb, row], axis: 0)
         }
         // [3+L, D]
