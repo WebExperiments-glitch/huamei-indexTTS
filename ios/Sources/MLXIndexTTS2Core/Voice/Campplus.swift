@@ -281,6 +281,7 @@ struct CAMDenseLayer {
         var h = nonlinear1.run(x)
         h = conv1x1(h, w: linear1W)
         // CAM：对 bn 通道做通道注意力门
+        DLog.write("CAMCAM fwd x=\(x.shape) h=\(h.shape) l1w=\(linear1W.shape)")
         let gate = attention(h)
         // cam_local：带 dilation 的时间卷积提取帧级特征
         var y = camLocal(h)
@@ -304,6 +305,7 @@ struct CAMDenseLayer {
             inp = MLX.concatenated([inp, MLXArray.zeros([B, C, pad])], axis: 2)
         }
         let xt = inp.transposed(0, 2, 1)
+        DLog.write("CAMCAM camLocal x=\(x.shape) w=\(camLocalW.shape) dil=\(dil)")
         let o = MLX.conv1d(xt, camLocalW, stride: 1, padding: 0, dilation: dil)
         return o.transposed(0, 2, 1)
     }
@@ -311,6 +313,7 @@ struct CAMDenseLayer {
     private func attention(_ x: MLXArray) -> MLXArray {
         // context = mean(轴时间) + seg_pooling(x)  → [B,bn,1]
         let B = x.shape[0], C = x.shape[1], T = x.shape[2]
+        DLog.write("CAMCAM att x=\(x.shape) B=\(B) C=\(C) T=\(T)")
         let globalMean = x.mean(axis: -1, keepDims: true)          // [B,bn,1]
         let seg = segPooling(x)                                    // [B,bn,1]
         var ctx = globalMean + seg
@@ -321,6 +324,7 @@ struct CAMDenseLayer {
         let gate = 1 / (1 + MLX.exp(-ctx))                          // sigmoid [B,out,1]
         // 广播到时间维
         // gate [B,out,1] 广播到时间维：reshape + 乘法广播（mlx 无 public broadcast）
+        DLog.write("CAMCAM att gate=\(gate.shape)")
         return gate.reshaped([B, out, 1]) * MLXArray.ones([1, 1, T])
     }
 
@@ -334,6 +338,7 @@ struct CAMDenseLayer {
         if padTail > 0 {
             padded = MLX.concatenated([padded, MLXArray.zeros([B, C, padTail])], axis: 2)
         }
+        DLog.write("CAMCAM seg x=\(x.shape) S=\(S) padTail=\(padTail) padded=\(padded.shape)")
         let pooled = padded.reshaped([B, C, S, segLen]).mean(axis: 3)   // [B,C,S]
         // 每段扩展 segLen 份，截断回 T
         let expanded = pooled.reshaped([B, C, S, 1]) * MLXArray.ones([1, 1, 1, segLen])
