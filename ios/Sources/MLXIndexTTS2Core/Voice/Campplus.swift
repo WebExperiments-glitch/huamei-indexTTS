@@ -22,7 +22,6 @@ public final class Campplus {
     private struct TDNNBlock { var layers: [CAMDenseLayer] = [] }
     private let tdnn0: (w: MLXArray, bn: BatchNorm1d)
     private var blocks: [TDNNBlock] = []
-    private let bnInits: [Int]                   // 每块初始通道（linear1 输入）
     private var transits: [(bn: BatchNorm1d, w: MLXArray)] = []
     private let outBN: BatchNorm1d
     private let denseW: MLXArray                 // [192,1024,1]
@@ -64,38 +63,40 @@ public final class Campplus {
         // ---- xvector ----
         tdnn0 = (p1(try t("xvector.tdnn.linear.weight")),
                  try BatchNorm1d(prefix: "xvector.tdnn.nonlinear.batchnorm", file: f))
-        // 块参数：12/24/16 层，初始通道由前级推出
-        let bns = [128, 128, 128]
+        // 块参数：12/24/16 层。通道数不猜——官方 DTDNN.py：
+        //   CAMDenseTDNNLayer(in = block_in + i*out, out=32, bn=128 固定)
+        //   nonlinear1/get_nonlinear(in)  → BN 通道 = 该层输入（每层 +32）
+        //   linear1(in→bn) [bn,1,in] —— in 维即非线性1通道，bn 维即非线性2/cam 通道
         let grows = [32, 32, 32]
         let dils = [1, 2, 2]
-        var inCh = 128
         for bi in 0..<3 {
             var block = TDNNBlock()
             for li in 0..<[12, 24, 16][bi] {
                 let p = "xvector.block\(bi + 1).tdnnd\(li + 1)."
+                let l1w = p1(try t(p + "linear1.weight"))          // [bn,1,in]
+                let layerIn = l1w.shape[2]                         // 该层真实输入（= block_in + li*out）
+                let bnCh = l1w.shape[0]                            // = 固定 bn 通道（bn_size*growth=128）
                 block.layers.append(CAMDenseLayer(
                     nonlinear1: try BatchNorm1d(prefix: p + "nonlinear1.batchnorm", file: f),
-                    linear1W: p1(try t(p + "linear1.weight")),
+                    linear1W: l1w,
                     nonlinear2: try BatchNorm1d(prefix: p + "nonlinear2.batchnorm", file: f),
                     camLocalW: p1(try t(p + "cam_layer.linear_local.weight")),
                     camL1W: p1(try t(p + "cam_layer.linear1.weight")),
                     camL1B: try t(p + "cam_layer.linear1.bias"),
                     camL2W: p1(try t(p + "cam_layer.linear2.weight")),
                     camL2B: try t(p + "cam_layer.linear2.bias"),
-                    bnIn: bns[bi],
+                    bnIn: layerIn,
+                    bn: bnCh,
                     out: grows[bi], dil: dils[bi]
                 ))
             }
             blocks.append(block)
-            inCh += [12, 24, 16][bi] * grows[bi]
             let tp = "xvector.transit\(bi + 1)."
             transits.append((
                 try BatchNorm1d(prefix: tp + "nonlinear.batchnorm", file: f),
                 p1(try t(tp + "linear.weight"))
             ))
-            inCh /= 2
         }
-        bnInits = [128]
         outBN = try BatchNorm1d(prefix: "xvector.out_nonlinear.batchnorm", file: f)
         denseW = p1(try t("xvector.dense.linear.weight"))
         denseBN = try BatchNorm1d(prefix: "xvector.dense.nonlinear.batchnorm", file: f,
@@ -274,14 +275,16 @@ struct CAMDenseLayer {
     let camLocalW: MLXArray                // [out,k,bn]
     let camL1W: MLXArray, camL1B: MLXArray  // [bn/2,1,bn]
     let camL2W: MLXArray, camL2B: MLXArray  // [out,1,bn/2]
-    let bnIn: Int, out: Int, dil: Int
+    let bnIn: Int, bn: Int, out: Int, dil: Int
 
     func forward(_ x: MLXArray) -> MLXArray {
-        // linear1(nonlinear1(x))：1x1 conv 提维到 bn
+        // 官方 CAMDenseTDNNLayer.forward：
+        //   x = linear1(nonlinear1(x))          → in→bn 提维
+        //   x = cam_layer(nonlinear2(x))        → bn 上做通道注意力 + 时间卷积
+        // 输入宽度 = block_in + li*out（每层 +32），BN(nonlinear1) 用该层 in 通道
         var h = nonlinear1.run(x)
         h = conv1x1(h, w: linear1W)
         // CAM：对 bn 通道做通道注意力门
-        DLog.write("CAMCAM fwd x=\(x.shape) h=\(h.shape) l1w=\(linear1W.shape)")
         let gate = attention(h)
         // cam_local：带 dilation 的时间卷积提取帧级特征
         var y = camLocal(h)
