@@ -32,10 +32,12 @@ public final class Campplus {
         let f = try SafetensorsFile(path: path)
         defer { f.close() }
         func t(_ n: String) throws -> MLXArray { try f.tensor(n) }
+        // ⚠️ 轴置换必须用 transposed —— `x[0..., 2..., 3..., 1...]` 在 mlx-swift 里是轴切片
+        //    （"从索引N切到末尾"），对 [32,1,3,3] 求值得到 [32,0,0,2]，空维 → conv2d 输出空 → 崩溃
         // torch 2D 卷积权重 [O,I,Kh,Kw] → MLX [O,Kh,Kw,I]
-        func p2(_ x: MLXArray) -> MLXArray { x[0..., 2..., 3..., 1...] }
+        func p2(_ x: MLXArray) -> MLXArray { x.transposed(0, 2, 3, 1) }
         // torch 1D 卷积权重 [O,I,K] → MLX [O,K,I]
-        func p1(_ x: MLXArray) -> MLXArray { x[0..., 2..., 1...] }
+        func p1(_ x: MLXArray) -> MLXArray { x.transposed(0, 2, 1) }
 
         // ---- head ----
         conv1 = (p2(try t("head.conv1.weight")), nil)
