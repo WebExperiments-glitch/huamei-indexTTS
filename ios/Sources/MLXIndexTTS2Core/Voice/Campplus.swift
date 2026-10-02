@@ -294,6 +294,7 @@ struct CAMDenseLayer {
         let gate = attention(h)
         // cam_local：带 dilation 的时间卷积提取帧级特征
         var y = camLocal(h)
+        DLog.write("CAMLAYER local=\(y.shape) gate=\(gate.shape)")
         y = y * gate
         DLog.write("CAMLAYER out y=\(y.shape)")
         return y
@@ -321,21 +322,25 @@ struct CAMDenseLayer {
     }
 
     private func attention(_ x: MLXArray) -> MLXArray {
-        // context = mean(轴时间) + seg_pooling(x)  → [B,bn,1]
+        // 官方 CAMLayer.forward：
+        //   context = x.mean(-1, keepdim=True) + seg_pooling(x)   → [B, C, T]
+        //   m = sigmoid(linear2(relu(linear1(context))))          → [B, out, T]
+        //   return y * m
+        // ⚠️ seg_pooling 展开回 T 长度，所以 context/gate 全程是 [B,·,T]；
+        //    之前误把 gate reshape 成 [B,out,1]（元素数 32 vs 32*T）→ 空张量 → 崩溃。
         let B = x.shape[0], C = x.shape[1], T = x.shape[2]
         DLog.write("CAMCAM att x=\(x.shape) B=\(B) C=\(C) T=\(T)")
         let globalMean = x.mean(axis: -1, keepDims: true)          // [B,bn,1]
-        let seg = segPooling(x)                                    // [B,bn,1]
-        var ctx = globalMean + seg
-        // 1x1 conv：channels-last 翻转后运算再翻回 [B,C,1]
+        let seg = segPooling(x)                                    // [B,bn,T]
+        var ctx = globalMean + seg                                 // [B,bn,T]（广播）
+        DLog.write("CAMCAM att mean=\(globalMean.shape) seg=\(seg.shape) ctx=\(ctx.shape)")
+        // 1x1 conv：channels-last 翻转后运算再翻回 [B,C,T]
         ctx = conv1x1(ctx, w: camL1W) + camL1B.reshaped([1, -1, 1])  // bn→bn/2
         ctx = MLX.maximum(ctx, 0)
         ctx = conv1x1(ctx, w: camL2W) + camL2B.reshaped([1, -1, 1])  // →out
-        let gate = 1 / (1 + MLX.exp(-ctx))                          // sigmoid [B,out,1]
-        // 广播到时间维
-        // gate [B,out,1] 广播到时间维：reshape + 乘法广播（mlx 无 public broadcast）
+        let gate = 1 / (1 + MLX.exp(-ctx))                          // sigmoid [B,out,T]
         DLog.write("CAMCAM att gate=\(gate.shape)")
-        return gate.reshaped([B, out, 1]) * MLXArray.ones([1, 1, T])
+        return gate
     }
 
     private func segPooling(_ x: MLXArray) -> MLXArray {
