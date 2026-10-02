@@ -36,6 +36,10 @@ public final class W2VBert {
     /// 与 scripts/w2vbert_layers_golden.py 的产物逐层比对，校准完成后置 false。
     public var dumpForCalibration = true
 
+    /// 构建标识：真机日志据此区分版本，避免「装了旧包却以为在测新修复」。
+    /// 重要修复请递增（会打印在 hiddenState 首行）。
+    public static let buildTag = "w2v-attnfix-v75"
+
     // feature projection（官方：LayerNorm(160) → Linear(160→1024)）
     private let featProjW: MLXArray     // [o=1024, i=160] 2D Linear（不可转置）
     private let featProjB: MLXArray
@@ -252,7 +256,7 @@ public final class W2VBert {
     /// 前向：返回 hiddenStates[i] 输出。targetIndex=17 → 与官方 hidden_states[17] 对齐（0=投影后, 1..24=各层后）
     public func hiddenState(_ features: MLXArray, targetIndex: Int = 17) throws -> MLXArray {
         // features [B,T,160]
-        DLog.write("W2V hiddenState in=\(features.shape) target=\(targetIndex)")
+        DLog.write("W2V hiddenState [\(W2VBert.buildTag)] in=\(features.shape) target=\(targetIndex)")
         let dump = dumpForCalibration
         return try MLX.withError {
             // 必须先导出「本次实际输入」：Windows 侧要用同一份 input_feat 跑官方模型生成 golden，
