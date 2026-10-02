@@ -196,6 +196,12 @@ public final class W2VBert {
     ///   → [B,T,C] → depthwise_layer_norm(LN over C) → activation(swish) → pointwise_conv2(1×1) → [B,T,C]
     /// ⚠️ 三个 conv 均无 bias；pad 是 causal 左 30，不是对称 15。
     private func convModule(_ x: MLXArray, b: Block) -> MLXArray {
+        DLog.write("W2VCONV in x=\(x.shape) ndim=\(x.ndim) ln=\(b.convLNw.shape) dw=\(b.dwW.shape) pw1=\(b.pw1W.shape) pw2=\(b.pw2W.shape)")
+        // 兜底：形状异常时不让 Swift 下标越界成崩溃，打印后跳过该子层（便于拿到完整日志定位上游）
+        guard x.ndim == 3, b.dwW.ndim == 3 else {
+            DLog.write("W2VCONV SKIP bad x.ndim=\(x.ndim) dw.ndim=\(b.dwW.ndim)")
+            return x
+        }
         let h = Ops.layerNorm(x, weight: b.convLNw, bias: b.convLNb)     // ① LN(1024) on [B,T,C]
         let D = h.shape[2]
         var ct = h.transposed(0, 2, 1)                                    // [B,C,T]
@@ -224,7 +230,10 @@ public final class W2VBert {
         var y = ffn(x, lnW: b.ffn1LNw, lnB: b.ffn1LNb,
                     iW: b.ffn1IW, iB: b.ffn1Ib, oW: b.ffn1OW, oB: b.ffn1Ob)
         var h = x + y * 0.5
-        h = h + attention(h, b: b)
+        let attn = attention(h, b: b)
+        DLog.write("W2VBLK x=\(x.shape) ffn=\(y.shape) attn=\(attn.shape)")
+        h = h + attn
+        DLog.write("W2VBLK h_after_attn=\(h.shape) ndim=\(h.ndim)")
         h = h + convModule(h, b: b)
         y = ffn(h, lnW: b.ffn2LNw, lnB: b.ffn2LNb,
                 iW: b.ffn2IW, iB: b.ffn2Ib, oW: b.ffn2OW, oB: b.ffn2Ob)
