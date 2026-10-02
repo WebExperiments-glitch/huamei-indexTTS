@@ -32,6 +32,10 @@ public final class W2VBert {
 
     public let cfg: Config
 
+    /// 数值对拍开关：true 时导出各层输出（日志统计量 + Documents/w2v_dump/*.bin）。
+    /// 与 scripts/w2vbert_layers_golden.py 的产物逐层比对，校准完成后置 false。
+    public var dumpForCalibration = true
+
     // feature projection（官方：LayerNorm(160) → Linear(160→1024)）
     private let featProjW: MLXArray     // [o=1024, i=160] 2D Linear（不可转置）
     private let featProjB: MLXArray
@@ -240,11 +244,14 @@ public final class W2VBert {
     public func hiddenState(_ features: MLXArray, targetIndex: Int = 17) throws -> MLXArray {
         // features [B,T,160]
         DLog.write("W2V hiddenState in=\(features.shape) target=\(targetIndex)")
+        let dump = dumpForCalibration
         return try MLX.withError {
             var h = featureProjection(features)
+            if dump { dumpLayer(h, index: 0, kind: "proj") }
             if targetIndex == 0 { return h }
             for i in 0..<cfg.layers {
                 h = block(h, b: blocks[i])
+                if dump { dumpLayer(h, index: i + 1, kind: "layer") }
                 if targetIndex == i + 1 {
                     DLog.write("W2V hiddenState out=\(h.shape) layer=\(i + 1)")
                     return h
@@ -252,5 +259,26 @@ public final class W2VBert {
             }
             throw SafetensorsError.missing("layer \(targetIndex) out of range")
         }
+    }
+
+    /// 数值对拍导出：日志写 shape/mean/absmax/前 8 值（与 Python golden 的统计量直接可比），
+    /// 完整张量写 Documents/w2v_dump/<kind>_<index>.bin（float32 小端；
+    /// Python 侧 `np.fromfile(p, '<f4').reshape(T,1024)` 即可还原做逐元素比对）。
+    private func dumpLayer(_ h: MLXArray, index: Int, kind: String) {
+        let f = h.asType(.float32).asFloatArray()
+        guard !f.isEmpty else {
+            DLog.write("W2VDUMP \(kind)_\(index) EMPTY shape=\(h.shape)")
+            return
+        }
+        let mean = f.reduce(0, +) / Float(f.count)
+        let absmax = f.map { abs($0) }.max() ?? 0
+        let head = f.prefix(8).map { String(format: "%.6f", $0) }.joined(separator: ",")
+        DLog.write(String(format: "W2VDUMP %@_%d shape=%@ mean=%.6f absmax=%.6f head=[%@]",
+                          kind, index, "\(h.shape)", mean, absmax, head))
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let dir = docs.appendingPathComponent("w2v_dump")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let data = f.withUnsafeBufferPointer { Data(buffer: $0) }
+        try? data.write(to: dir.appendingPathComponent("\(kind)_\(index).bin"))
     }
 }
