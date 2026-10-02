@@ -154,10 +154,12 @@ public final class Campplus {
             let stdX = MLX.sqrt(sq / (tN - 1))
             x = MLX.concatenated([meanX, stdX], axis: 1)                 // [B,1024]
 
-            // dense 1x1 → [B,1024,1] → [B,192,1] → squeeze
+            // dense 1x1 → [B,1024,1] → [B,192,1]；官方 DenseLayer：conv → batchnorm_ → [B,192]
+            // ⚠️ BN 必须在 3D 上做完再 squeeze：BatchNorm1d.run 按轴1广播，
+            //    对 2D [B,192] 会广播成 [B,192,192]（v68 实测）。
             x = conv1dPadded(x.reshaped([B, 1024, 1]), w: denseW, dil: 1, pad: 0, stride: 1)
-            x = x[0..., 0..., 0...].reshaped([B, 192])
-            x = denseBN.run(x)
+            x = denseBN.run(x)                                  // [B,192,1]
+            x = x.reshaped([B, 192])                             // squeeze → [B,192]
             DLog.write("CAMP dense out=\(x.shape)")
             return x
         }

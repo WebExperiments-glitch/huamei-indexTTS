@@ -63,8 +63,11 @@ public final class W2VBert {
         defer { f.close() }
 
         func t(_ n: String) throws -> MLXArray { try f.tensor(n) }
+        // ⚠️ 轴置换必须用 transposed —— `x[0..., 2..., 1...]` 在 mlx-swift 里是轴切片
+        //    （"从索引N切到末尾"）：对 depthwise [1024,1,7] / pw [·,·,1] 会切出空维，
+        //    触发 mlx_array_dim 报错崩溃（与 Campplus p1/p2 同源问题）。
         // torch [O,I,K] → MLX [O,K,I]
-        func convPerm(_ x: MLXArray) -> MLXArray { x[0..., 2..., 1...] }
+        func convPerm(_ x: MLXArray) -> MLXArray { x.transposed(0, 2, 1) }
 
         featProjW = convPerm(try t("feature_projection.projection.weight"))
         featProjB = try t("feature_projection.projection.bias")
