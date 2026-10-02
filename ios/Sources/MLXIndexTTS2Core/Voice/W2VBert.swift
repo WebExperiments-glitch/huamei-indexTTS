@@ -38,7 +38,7 @@ public final class W2VBert {
 
     /// 构建标识：真机日志据此区分版本，避免「装了旧包却以为在测新修复」。
     /// 重要修复请递增（会打印在 hiddenState 首行）。
-    public static let buildTag = "w2v-attnfix-v75"
+    public static let buildTag = "w2v-attnfix-v76"
 
     // feature projection（官方：LayerNorm(160) → Linear(160→1024)）
     private let featProjW: MLXArray     // [o=1024, i=160] 2D Linear（不可转置）
@@ -134,45 +134,53 @@ public final class W2VBert {
         return h
     }
 
-    /// 自注意力 —— 严格对齐官方 Wav2Vec2BertSelfAttention.forward（relative_key 分支）：
-    ///   scores = q·kᵀ / √D
-    ///   distance = clamp(j-i, -left(64), +right(8))，桶号 = distance + left ∈ [0,72]
-    ///   posemb = distance_embedding(桶号) ∈ R^D
-    ///   scores += (Σ_d q[i,h,d]·posemb[i,j,d]) / √D
-    /// ⚠️ 此前三处写错：① 完全没有 √D 缩放；② clamp 上下界写成 (-right,+left) 方向正好反；
-    ///    ③ 桶偏移用 +right 而非 +left。另 gather 元素数差 T 倍导致返回空数组。
+    /// 自注意力 —— 逐步对齐官方 Wav2Vec2BertSelfAttention.forward（relative_key 分支）：
+    ///   q/k/v: [T,H,D] → [H,T,D]（head 提到最前，等价官方 view(B,T,H,D).transpose(1,2)）
+    ///   scores = q·kᵀ / √D → [H,T,T]
+    ///   distance = clamp(j-i, -left(64), +right(8))，桶号 = distance + left
+    ///   bias[h,i,j] = Σ_d q[h,i,d]·emb[bucket(i,j),d]；scores += bias / √D
+    /// ⚠️ 空数组根因（v73/v75 都没修对）：MLX 的 matmul 把**前导维当 batch**。
+    ///    写成 [T,H,D] 时 batch=T、矩阵=[H,D]，q·kᵀ 得 [T,H,H]（而非 [T,H,T]），
+    ///    与偏置广播失败即返回空。必须先把 head 维提到最前成 [H,T,D]。
     private func attention(_ x: MLXArray, b: Block) -> MLXArray {
         let T = x.shape[1]
         let H = cfg.heads
         let D = cfg.headDim
-        let scale = 1.0 / Float(D).squareRoot()                      // 官方 / math.sqrt(head_size)
+        let scale = 1.0 / Float(D).squareRoot()                          // 官方 / √head_size
         let inX = Ops.layerNorm(x, weight: b.attnLNw, bias: b.attnLNb)
 
         func heads(_ w: MLXArray, _ bb: MLXArray) -> MLXArray {
-            Ops.linear(inX, w: w, b: bb).reshaped([T, H, D])          // [T,H,D]
+            Ops.linear(inX, w: w, b: bb)
+                .reshaped([T, H, D])
+                .transposed(1, 0, 2)                                     // [H,T,D]
         }
         let q = heads(b.qW, b.qB)
         let k = heads(b.kW, b.kB)
         let v = heads(b.vW, b.vB)
 
-        // ① scores = q·kᵀ / √D
-        let scores = MLX.matmul(q, k.transposed(0, 2, 1)) * scale      // [T,H,T]
+        // ① scores = q·kᵀ / √D → [H,T,T]
+        let scores = MLX.matmul(q, k.transposed(0, 2, 1)) * scale
 
-        // ② relative_key 偏置：rel[i,j,h] = Σ_d q[i,h,d] · emb[bucket(i,j),d]
-        let nBucket = cfg.leftMax + cfg.rightMax + 1                   // 73
-        let relLogits = MLX.matmul(q, b.distEmb.transposed(0, 1))      // [T,H,73] = q·embᵀ
-        let relFlat = relLogits.transposed(0, 2, 1).reshaped([T * nBucket, H])   // [T*73,H]
+        // ② relative_key 偏置 → [H,T,T]
+        let nBucket = cfg.leftMax + cfg.rightMax + 1                     // 73
+        let relLogits = MLX.matmul(q, b.distEmb.transposed(0, 1))        // [H,T,73]
+        let relFlat = relLogits.reshaped([H, T * nBucket])               // [H,T*73]
         let idx = pairIndices(T: T, left: cfg.leftMax, right: cfg.rightMax, buckets: nBucket)
-        let gathered = MLX.take(relFlat, idx.reshaped([-1]), axis: 0)  // [T*T,H]
-        let bias = gathered.reshaped([T, T, H])                        // [T,T,H]
+        let gathered = MLX.take(relFlat, idx.reshaped([-1]), axis: 1)    // [H,T*T]
+        let bias = gathered.reshaped([H, T, T])                          // [H,T,T]
+
+        DLog.write("W2VATT q=\(q.shape) scores=\(scores.shape) relFlat=\(relFlat.shape) bias=\(bias.shape)")
 
         // ③ scores += bias / √D
-        let scoresH = scores + bias.transposed(0, 2, 1) * scale        // [T,H,T]
+        let scoresH = scores + bias * scale
+        DLog.write("W2VATT scoresH=\(scoresH.shape)")
 
-        let probs = Ops.softmaxLast(scoresH)                           // 沿 key 维
-        let ctx = MLX.matmul(probs, v)                                 // [T,H,D]
-        let merged = ctx.reshaped([1, T, H * D])
-        return Ops.linear(merged, w: b.oW, b: b.oB)
+        let probs = Ops.softmaxLast(scoresH)                             // 沿 key 维
+        let ctx = MLX.matmul(probs, v)                                   // [H,T,D]
+        let merged = ctx.transposed(1, 0, 2).reshaped([1, T, H * D])     // [1,T,1024]
+        let out = Ops.linear(merged, w: b.oW, b: b.oB)
+        DLog.write("W2VATT ctx=\(ctx.shape) out=\(out.shape)")
+        return out
     }
 
     /// 相对位置的展平行索引 [T,T]（Int32）= i*73 + (clamp(j-i, -left, +right) + left)
