@@ -4,13 +4,14 @@ import MLX
 /// 自研 W2VBert Conformer 编码器（w2v-bert-2.0，1B 级，全量解压前向）
 ///
 /// 结构（由权重清单 `scripts/golden/w2vbert_keys.json` 与 config.json 锁定）：
-///   · feature_projection：Conv1d(160→1024, k3) + LayerNorm
+///   · feature_projection：LayerNorm(160) → Linear(160→1024)（官方 Wav2Vec2BertFeatureProjection）
 ///   · 24 × Conformer 块（macaron 半残差）：
 ///       x += 0.5·FFN1(x)  →  x += Attn(x)  →  x += ConvModule(x)  →  x += 0.5·FFN2(x)
 ///   · 注意力：relative_key（distance_embedding[73,64]，left 64 / right 8）
 ///   · 返回第 17 索引（= 16 号层输出，与官方 hidden_states[17] 对齐）
 ///
-/// ⚠️ 权重布局：本仓库 safetensors 为 torch 布局 [O,I,K]；MLX conv 需 [O,K,I]，加载时转置一次。
+/// ⚠️ 权重布局：conv 权重为 torch [O,I,K]，MLX conv 需 [O,K,I]，加载时转置一次；
+///    Linear 权重（feature_projection/FFN/attn）本就是 [out,in] 2D，**不可转置**。
 /// ⚠️ relative-key 与卷积模块的两处公式细节标 *calibrate*，用 golden 对拍收敛（见 README P5）。
 public final class W2VBert {
 
@@ -31,10 +32,10 @@ public final class W2VBert {
 
     public let cfg: Config
 
-    // feature projection
-    private let featProjW: MLXArray     // [o=1024, k=3, i=160]
+    // feature projection（官方：LayerNorm(160) → Linear(160→1024)）
+    private let featProjW: MLXArray     // [o=1024, i=160] 2D Linear（不可转置）
     private let featProjB: MLXArray
-    private let featLN_w: MLXArray
+    private let featLN_w: MLXArray      // [160]
     private let featLN_b: MLXArray
 
     // 每层
@@ -47,9 +48,9 @@ public final class W2VBert {
         let distEmb: MLXArray           // [73, 64]
         let convLNw: MLXArray, convLNb: MLXArray
         let dwLNw: MLXArray, dwLNb: MLXArray
-        let dwW: MLXArray               // [1024, 31, 1]
-        let pw1W: MLXArray, pw1B: MLXArray    // [2048,1,1024]
-        let pw2W: MLXArray, pw2B: MLXArray    // [1024,1,1024]
+        let dwW: MLXArray               // [1024, 31, 1]（groups=1024，无 bias）
+        let pw1W: MLXArray              // [2048, 1, 1024]（无 bias）
+        let pw2W: MLXArray              // [1024, 1, 1024]（无 bias）
         let ffn2LNw: MLXArray, ffn2LNb: MLXArray
         let ffn2IW: MLXArray, ffn2Ib: MLXArray, ffn2OW: MLXArray, ffn2Ob: MLXArray
         let finLNw: MLXArray, finLNb: MLXArray
@@ -69,7 +70,8 @@ public final class W2VBert {
         // torch [O,I,K] → MLX [O,K,I]
         func convPerm(_ x: MLXArray) -> MLXArray { x.transposed(0, 2, 1) }
 
-        featProjW = convPerm(try t("feature_projection.projection.weight"))
+        // ⚠️ feature_projection 是 Linear（权重 2D [1024,160]），绝不走 convPerm/转置
+        featProjW = try t("feature_projection.projection.weight")
         featProjB = try t("feature_projection.projection.bias")
         featLN_w = try t("feature_projection.layer_norm.weight")
         featLN_b = try t("feature_projection.layer_norm.bias")
@@ -100,9 +102,7 @@ public final class W2VBert {
                 dwLNb: try t(p + "conv_module.depthwise_layer_norm.bias"),
                 dwW: convPerm(try t(p + "conv_module.depthwise_conv.weight")),
                 pw1W: convPerm(try t(p + "conv_module.pointwise_conv1.weight")),
-                pw1B: try t(p + "conv_module.pointwise_conv1.bias"),
                 pw2W: convPerm(try t(p + "conv_module.pointwise_conv2.weight")),
-                pw2B: try t(p + "conv_module.pointwise_conv2.bias"),
                 ffn2LNw: try t(p + "ffn2_layer_norm.weight"),
                 ffn2LNb: try t(p + "ffn2_layer_norm.bias"),
                 ffn2IW: try t(p + "ffn2.intermediate_dense.weight"),
@@ -186,23 +186,33 @@ public final class W2VBert {
         return collected.reshaped([T, T, h])                             // [T,T,H]
     }
 
-    /// 卷积模块（depthwise k31 → 通道 LN → pointwise 1×1(2048) → swish → pointwise(1024)）
+    /// 卷积模块 —— 严格对齐官方 Wav2Vec2BertConvolutionModule.forward：
+    ///   LN(1024) → [B,C,T] → pointwise_conv1(1×1, C→2C) → GLU(→C)
+    ///   → 左侧零 pad (k-1)=30（causal）→ depthwise_conv(k31, groups=C, padding=0)
+    ///   → [B,T,C] → depthwise_layer_norm(LN over C) → activation(swish) → pointwise_conv2(1×1) → [B,T,C]
+    /// ⚠️ 三个 conv 均无 bias；pad 是 causal 左 30，不是对称 15。
     private func convModule(_ x: MLXArray, b: Block) -> MLXArray {
-        let h = Ops.layerNorm(x, weight: b.convLNw, bias: b.convLNb)     // [B,T,D]
-        let B = h.shape[0], T = h.shape[1], D = h.shape[2]
-        var ct = h.transposed(0, 2, 1)                                    // [B,D,T]
-        ct = Ops.reflectPad(ct, left: 15, right: 15)
-        // depthwise：dwconv 权重 [D,31,1]（out=in=D, in/group=1）→ groups=D 才能每通道独立卷积
-        ct = Ops.conv1d(ct, w: b.dwW, b: nil, dilation: 1, groups: b.dwW.shape[0])
-        // depthwise_layer_norm：对通道维归一化（GroupNorm(1) 语义）
-        ct = Ops.layerNorm(ct, weight: b.dwLNw.reshaped([1, D, 1]),
-                           bias: b.dwLNb.reshaped([1, D, 1]), eps: 1e-5)
-        ct = Ops.conv1d(ct, w: b.pw1W, b: b.pw1B)                        // [B,2048,T]
-        ct = Ops.silu(ct)
-        ct = Ops.conv1d(ct, w: b.pw2W, b: b.pw2B)                        // [B,D,T]
-        let out = ct.transposed(0, 2, 1)
-        _ = B; _ = T; _ = D
-        return out
+        let h = Ops.layerNorm(x, weight: b.convLNw, bias: b.convLNb)     // ① LN(1024) on [B,T,C]
+        let D = h.shape[2]
+        var ct = h.transposed(0, 2, 1)                                    // [B,C,T]
+        ct = Ops.conv1d(ct, w: b.pw1W, b: nil)                            // ② [B,2C,T]
+        ct = glu(ct)                                                      // ③ GLU → [B,C,T]
+        ct = Ops.zeroPad(ct, left: b.dwW.shape[1] - 1, right: 0)          // ④ causal pad 30
+        ct = Ops.conv1d(ct, w: b.dwW, b: nil, groups: D)                  // ⑤ depthwise k31
+        ct = ct.transposed(0, 2, 1)                                       // [B,T,C]
+        ct = Ops.layerNorm(ct, weight: b.dwLNw, bias: b.dwLNb)            // ⑥ LN over C（非通道 GN）
+        ct = Ops.silu(ct)                                                 // ⑦ swish
+        ct = ct.transposed(0, 2, 1)                                       // [B,C,T]
+        ct = Ops.conv1d(ct, w: b.pw2W, b: nil)                            // ⑧ [B,C,T]
+        return ct.transposed(0, 2, 1)
+    }
+
+    /// nn.GLU(dim=1)：前半 a 乘以后半的 sigmoid；x [B,2C,T]
+    private func glu(_ x: MLXArray) -> MLXArray {
+        let c = x.shape[1] / 2
+        let a = x[0..., 0..<c, 0...]
+        let b = x[0..., c..<(2 * c), 0...]
+        return a * Ops.sigmoid(b)
     }
 
     /// 单 conformer 块
@@ -220,12 +230,10 @@ public final class W2VBert {
     // MARK: - 前向
 
     private func featureProjection(_ x: MLXArray) -> MLXArray {
-        // x [B,T,160] → [B,160,T] conv k3 pad1 → [B,T,1024]
-        var h = x.transposed(0, 2, 1)
-        h = Ops.conv1d(Ops.zeroPad(h, left: 1, right: 1), w: featProjW, b: featProjB)
-        h = h.transposed(0, 2, 1)
-        h = Ops.layerNorm(h, weight: featLN_w, bias: featLN_b)
-        return h
+        // 官方 Wav2Vec2BertFeatureProjection：LayerNorm(160) → Linear(160→1024)
+        // x [B,T,160] → LN(160) → [B,T,1024]
+        let h = Ops.layerNorm(x, weight: featLN_w, bias: featLN_b)
+        return Ops.linear(h, w: featProjW, b: featProjB)
     }
 
     /// 前向：返回 hiddenStates[i] 输出。targetIndex=17 → 与官方 hidden_states[17] 对齐（0=投影后, 1..24=各层后）
