@@ -246,6 +246,9 @@ public final class W2VBert {
         DLog.write("W2V hiddenState in=\(features.shape) target=\(targetIndex)")
         let dump = dumpForCalibration
         return try MLX.withError {
+            // 必须先导出「本次实际输入」：Windows 侧要用同一份 input_feat 跑官方模型生成 golden，
+            // 否则两端输入不同，逐层比对无意义（golden 里的 tone_feat 仅用于自检）。
+            if dump { dumpLayer(features, index: 0, kind: "input") }
             var h = featureProjection(features)
             if dump { dumpLayer(h, index: 0, kind: "proj") }
             if targetIndex == 0 { return h }
