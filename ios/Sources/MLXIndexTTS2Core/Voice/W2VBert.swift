@@ -130,64 +130,61 @@ public final class W2VBert {
         return h
     }
 
-    /// 自注意力（relative_key；距离桶 = clamp(j-i, -right, +left) + right）
+    /// 自注意力 —— 严格对齐官方 Wav2Vec2BertSelfAttention.forward（relative_key 分支）：
+    ///   scores = q·kᵀ / √D
+    ///   distance = clamp(j-i, -left(64), +right(8))，桶号 = distance + left ∈ [0,72]
+    ///   posemb = distance_embedding(桶号) ∈ R^D
+    ///   scores += (Σ_d q[i,h,d]·posemb[i,j,d]) / √D
+    /// ⚠️ 此前三处写错：① 完全没有 √D 缩放；② clamp 上下界写成 (-right,+left) 方向正好反；
+    ///    ③ 桶偏移用 +right 而非 +left。另 gather 元素数差 T 倍导致返回空数组。
     private func attention(_ x: MLXArray, b: Block) -> MLXArray {
         let T = x.shape[1]
-        let h = cfg.heads
-        let d = cfg.headDim
+        let H = cfg.heads
+        let D = cfg.headDim
+        let scale = 1.0 / Float(D).squareRoot()                      // 官方 / math.sqrt(head_size)
         let inX = Ops.layerNorm(x, weight: b.attnLNw, bias: b.attnLNb)
 
         func heads(_ w: MLXArray, _ bb: MLXArray) -> MLXArray {
-            Ops.linear(inX, w: w, b: bb)
-                .reshaped([T, h, d])       // [T,H,D]
+            Ops.linear(inX, w: w, b: bb).reshaped([T, H, D])          // [T,H,D]
         }
-        let q = heads(b.qW, b.qB)          // [T,H,D]
+        let q = heads(b.qW, b.qB)
         let k = heads(b.kW, b.kB)
         let v = heads(b.vW, b.vB)
 
-        // 绝对注意力分数 [T,H,T]（每位置 i 一批，softmax 沿最后轴 j）
-        let scores = MLX.matmul(q, k.transposed(0, 2, 1))
+        // ① scores = q·kᵀ / √D
+        let scores = MLX.matmul(q, k.transposed(0, 2, 1)) * scale      // [T,H,T]
 
-        // 相对偏置（query-side）：r(i,j,h) = Σ_d q[i,h,d]·emb[bucket(i,j),h,d]
-        let maxRel = cfg.leftMax + cfg.rightMax + 1                      // 73
-        // [T,H,73] = q [T,H,D] · embᵀ [D,73]
-        let relLogits = MLX.matmul(q, b.distEmb.transposed(0, 1))        // [T,H,73]
-        let relLogitsT = relLogits.transposed(0, 2, 1)                   // [T,73,H]
-        // 距离桶矩阵 [T,T]：r = clamp(j - i, -right, left) + right
-        let idx = indexBuckets(T: T, left: cfg.leftMax, right: cfg.rightMax)  // [T,T]
-        // 逐位置 i 收集 → [T,T,H]；转 [T,H,T] 加到分数
-        let bias = gatherPerPair(relLogitsT, idxs: idx, h: h)            // [T,T,H]
-        let scoresH = scores + bias.transposed(0, 2, 1)                  // [T,H,T]
+        // ② relative_key 偏置：rel[i,j,h] = Σ_d q[i,h,d] · emb[bucket(i,j),d]
+        let nBucket = cfg.leftMax + cfg.rightMax + 1                   // 73
+        let relLogits = MLX.matmul(q, b.distEmb.transposed(0, 1))      // [T,H,73] = q·embᵀ
+        let relFlat = relLogits.transposed(0, 2, 1).reshaped([T * nBucket, H])   // [T*73,H]
+        let idx = pairIndices(T: T, left: cfg.leftMax, right: cfg.rightMax, buckets: nBucket)
+        let gathered = MLX.take(relFlat, idx.reshaped([-1]), axis: 0)  // [T*T,H]
+        let bias = gathered.reshaped([T, T, H])                        // [T,T,H]
 
-        let probs = Ops.softmaxLast(scoresH)                             // 沿 j
-        let ctx = MLX.matmul(probs, v)                                   // [T,H,D]
-        let merged = ctx.reshaped([1, T, h * d])
-        let out = Ops.linear(merged, w: b.oW, b: b.oB)
-        _ = maxRel
-        return out
+        // ③ scores += bias / √D
+        let scoresH = scores + bias.transposed(0, 2, 1) * scale        // [T,H,T]
+
+        let probs = Ops.softmaxLast(scoresH)                           // 沿 key 维
+        let ctx = MLX.matmul(probs, v)                                 // [T,H,D]
+        let merged = ctx.reshaped([1, T, H * D])
+        return Ops.linear(merged, w: b.oW, b: b.oB)
     }
 
-    /// 距离桶索引 [T,T]（Int32）
-    private func indexBuckets(T: Int, left: Int, right: Int) -> MLXArray {
-        let positions = (0..<T).map { Int32($0) }
+    /// 相对位置的展平行索引 [T,T]（Int32）= i*73 + (clamp(j-i, -left, +right) + left)
+    /// 官方：distance = clamp(j-i, -left_max, +right_max)，桶号 = distance + left_max
+    private func pairIndices(T: Int, left: Int, right: Int, buckets: Int) -> MLXArray {
         var rows: [Int32] = []
         rows.reserveCapacity(T * T)
         for i in 0..<T {
+            let base = Int32(i * buckets)
             for j in 0..<T {
-                let shift = positions[j] - positions[i]
-                let clamped = max(-Int32(right), min(Int32(left), shift))
-                rows.append(clamped + Int32(right))
+                let shift = Int32(j - i)
+                let clamped = max(-Int32(left), min(Int32(right), shift))
+                rows.append(base + clamped + Int32(left))
             }
         }
         return MLXArray(rows, [T, T])
-    }
-
-    /// 按 [T,T] 索引从 [T,73,H] 收集 → [T,T,H]
-    private func gatherPerPair(_ rel: MLXArray, idxs: MLXArray, h: Int) -> MLXArray {
-        let T = idxs.shape[0]
-        let flat = idxs.reshaped([-1])                                   // [T*T]
-        let collected = MLX.take(rel, flat, axis: 1)                     // [T, T*T, H]
-        return collected.reshaped([T, T, h])                             // [T,T,H]
     }
 
     /// 卷积模块 —— 严格对齐官方 Wav2Vec2BertConvolutionModule.forward：
@@ -225,7 +222,8 @@ public final class W2VBert {
         return a * Ops.sigmoid(b)
     }
 
-    /// 单 conformer 块
+    /// 单 conformer 块（官方 Wav2Vec2BertEncoderLayer：
+    ///   Macaron-FFN1 → Self-Attn → ConvModule → Macaron-FFN2 → final_layer_norm）
     private func block(_ x: MLXArray, b: Block) -> MLXArray {
         var y = ffn(x, lnW: b.ffn1LNw, lnB: b.ffn1LNb,
                     iW: b.ffn1IW, iB: b.ffn1Ib, oW: b.ffn1OW, oB: b.ffn1Ob)
@@ -237,7 +235,9 @@ public final class W2VBert {
         h = h + convModule(h, b: b)
         y = ffn(h, lnW: b.ffn2LNw, lnB: b.ffn2LNb,
                 iW: b.ffn2IW, iB: b.ffn2Ib, oW: b.ffn2OW, oB: b.ffn2Ob)
-        return h + y * 0.5
+        h = h + y * 0.5
+        // ⚠️ 官方 Conformer 块末尾还有 final_layer_norm（finLNw/finLNb 此前定义了却从未使用）
+        return Ops.layerNorm(h, weight: b.finLNw, bias: b.finLNb)
     }
 
     // MARK: - 前向
