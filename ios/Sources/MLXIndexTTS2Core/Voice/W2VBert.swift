@@ -270,11 +270,15 @@ public final class W2VBert {
             DLog.write("W2VDUMP \(kind)_\(index) EMPTY shape=\(h.shape)")
             return
         }
-        let mean = f.reduce(0, +) / Float(f.count)
+        let n = Float(f.count)
+        let mean = f.reduce(0, +) / n
+        var acc: Float = 0
+        for v in f { let d = v - mean; acc += d * d }
+        let std = (acc / n).squareRoot()
         let absmax = f.map { abs($0) }.max() ?? 0
         let head = f.prefix(8).map { String(format: "%.6f", $0) }.joined(separator: ",")
-        DLog.write(String(format: "W2VDUMP %@_%d shape=%@ mean=%.6f absmax=%.6f head=[%@]",
-                          kind, index, "\(h.shape)", mean, absmax, head))
+        DLog.write(String(format: "W2VDUMP %@_%d shape=%@ mean=%.6f std=%.6f absmax=%.6f head=[%@]",
+                          kind, index, "\(h.shape)", mean, std, absmax, head))
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let dir = docs.appendingPathComponent("w2v_dump")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
